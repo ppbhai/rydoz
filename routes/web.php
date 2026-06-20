@@ -143,8 +143,11 @@ Route::get('userlogout', function () {
 
 ////////////////////////////// web
 Route::get('/index', [RideFlowController::class, 'index'])->name('index')->middleware('desktop.redirect');
-Route::view('/scooter-batteries', 'theme.scooter-batteries')
+Route::get('/scooter-batteries', [RideFlowController::class, 'scooterBatteries'])
     ->name('scooter.batteries')
+    ->middleware('desktop.redirect');
+Route::get('/scooter-usage', [RideFlowController::class, 'scooterUsage'])
+    ->name('scooter.usage')
     ->middleware('desktop.redirect');
 Route::get('/book', [RideFlowController::class, 'book'])->name('book')->middleware('desktop.redirect');
 Route::get('/booking-customer', [RideFlowController::class, 'customerLookup'])->name('booking-customer')->middleware('desktop.redirect');

@@ -155,7 +155,12 @@ public class AndroidScooterBleBridge {
 
     @JavascriptInterface
     @SuppressLint("MissingPermission")
-    public String startNearbyScan() {
+    public String startNearbyScan(String json) {
+        return startNearbyScanInternal();
+    }
+
+    @SuppressLint("MissingPermission")
+    private String startNearbyScanInternal() {
         nearbyScanRequested = true;
 
         if (bluetoothAdapter == null || bluetoothAdapter.getBluetoothLeScanner() == null) {
@@ -216,7 +221,7 @@ public class AndroidScooterBleBridge {
 
     private void resumeNearbyScan() {
         if (nearbyScanRequested) {
-            startNearbyScan();
+            startNearbyScanInternal();
         }
     }
 
@@ -346,10 +351,52 @@ public class AndroidScooterBleBridge {
         }
 
         nearbyPacketCount++;
+        String advertisedName = result.getDevice().getName();
+
+        if ((advertisedName == null || advertisedName.isEmpty()) && result.getScanRecord().getDeviceName() != null) {
+            advertisedName = result.getScanRecord().getDeviceName();
+        }
+
         SparseArray<byte[]> manufacturerData = result.getScanRecord().getManufacturerSpecificData();
         byte[] payload = manufacturerData == null
                 ? null
                 : manufacturerData.get(NEARBY_MANUFACTURER_ID);
+
+        if (payload != null && payload.length >= 3 && (payload[0] & 0xFF) == NEARBY_PROTOCOL_VERSION) {
+            int battery = payload[1] & 0xFF;
+            String scooterId = new String(
+                    Arrays.copyOfRange(payload, 2, payload.length),
+                    StandardCharsets.UTF_8
+            ).trim();
+
+            if (scooterId.isEmpty() || battery > 100) {
+                emitNearbyScanStatus("RYDOZ packet found but its battery data is invalid.");
+                return;
+            }
+
+            nearbyScooterCount++;
+            emitNearbyScanStatus("Found " + scooterId + " at " + battery + "%.");
+            emitNearbyScooter(scooterId, battery, result.getRssi(), result.getDevice().getAddress());
+            return;
+        }
+
+        JSONObject serviceTelemetry = parseJson(result.getScanRecord().getServiceData(new ParcelUuid(SERVICE_UUID)));
+
+        if (serviceTelemetry != null && serviceTelemetry.has("battery")) {
+            int battery = serviceTelemetry.optInt("battery", -1);
+            String scooterId = serviceTelemetry.optString("id", "").trim();
+
+            if (scooterId.isEmpty() && advertisedName != null && advertisedName.startsWith("RYDOZ-")) {
+                scooterId = advertisedName.substring("RYDOZ-".length()).trim();
+            }
+
+            if (!scooterId.isEmpty() && battery >= 0 && battery <= 100) {
+                nearbyScooterCount++;
+                emitNearbyScanStatus("Found " + scooterId + " at " + battery + "%.");
+                emitNearbyScooter(scooterId, battery, result.getRssi(), result.getDevice().getAddress());
+                return;
+            }
+        }
 
         if (payload == null || payload.length < 3 || (payload[0] & 0xFF) != NEARBY_PROTOCOL_VERSION) {
             long now = System.currentTimeMillis();
@@ -363,21 +410,18 @@ public class AndroidScooterBleBridge {
             }
             return;
         }
+    }
 
-        int battery = payload[1] & 0xFF;
-        String scooterId = new String(
-                Arrays.copyOfRange(payload, 2, payload.length),
-                StandardCharsets.UTF_8
-        ).trim();
-
-        if (scooterId.isEmpty() || battery > 100) {
-            emitNearbyScanStatus("RYDOZ packet found but its battery data is invalid.");
-            return;
+    private JSONObject parseJson(byte[] bytes) {
+        if (bytes == null || bytes.length == 0) {
+            return null;
         }
 
-        nearbyScooterCount++;
-        emitNearbyScanStatus("Found " + scooterId + " at " + battery + "%.");
-        emitNearbyScooter(scooterId, battery, result.getRssi(), result.getDevice().getAddress());
+        try {
+            return new JSONObject(new String(bytes, StandardCharsets.UTF_8));
+        } catch (JSONException error) {
+            return null;
+        }
     }
 
     @SuppressLint("MissingPermission")

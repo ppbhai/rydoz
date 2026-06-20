@@ -26,6 +26,39 @@
         status.dataset.state = state || 'idle';
     }
 
+    function iotSubmitButtons(form) {
+        return Array.from(form?.querySelectorAll('button[type="submit"], input[type="submit"]') || []);
+    }
+
+    function setIotSubmitEnabled(form, enabled) {
+        if (!form?.matches?.('form[data-iot-command]') || !form.querySelector('[data-iot-device-input]')) {
+            return;
+        }
+
+        iotSubmitButtons(form).forEach((button) => {
+            button.disabled = !enabled;
+            button.dataset.iotRequiresConnection = 'true';
+        });
+    }
+
+    function markFormConnected(form, scooterId) {
+        if (!form) {
+            return;
+        }
+
+        form.dataset.connectedScooterId = scooterId || '';
+        setIotSubmitEnabled(form, Boolean(scooterId));
+    }
+
+    function markFormDisconnected(form) {
+        if (!form) {
+            return;
+        }
+
+        delete form.dataset.connectedScooterId;
+        setIotSubmitEnabled(form, false);
+    }
+
     function setGlobalStatus(message, state) {
         const form = activeForm || document.querySelector('form[data-iot-command]');
         setStatus(form, message, state);
@@ -156,6 +189,7 @@
         commandCharacteristic = null;
         telemetryCharacteristic = null;
         activeScooterId = '';
+        markFormDisconnected(activeForm);
     }
 
     async function readNativeTelemetry() {
@@ -321,12 +355,15 @@
     function renderNearbyScooters() {
         const list = document.querySelector('[data-nearby-scooter-list]');
         const empty = document.querySelector('[data-nearby-scooter-empty]');
+        const search = document.querySelector('[data-nearby-scooter-search]');
+        const term = (search?.value || '').trim().toLowerCase();
 
         if (!list) {
             return;
         }
 
         const scooters = Array.from(nearbyScooters.values())
+            .filter((scooter) => term === '' || scooter.scooterId.toLowerCase().includes(term))
             .sort((left, right) => left.scooterId.localeCompare(right.scooterId));
 
         list.replaceChildren(...scooters.map((scooter) => {
@@ -346,6 +383,11 @@
 
         if (empty) {
             empty.hidden = scooters.length > 0;
+            if (nearbyScooters.size > 0 && scooters.length === 0) {
+                empty.textContent = 'No scooter matches search.';
+            } else if (nearbyScooters.size === 0 && !empty.textContent.trim()) {
+                empty.textContent = 'Searching for powered scooters...';
+            }
         }
     }
 
@@ -384,6 +426,7 @@
         if (hasNativeBridge() && activeScooterId === normalizedId) {
             const telemetry = latestTelemetryByScooter.get(normalizedId) || latestTelemetry;
             setStatus(form, formatConnectedMessage(normalizedId, telemetry), 'connected');
+            markFormConnected(form, normalizedId);
             return normalizedId;
         }
 
@@ -398,6 +441,7 @@
 
         const telemetry = await refreshTelemetry(form, normalizedId);
         setStatus(form, formatConnectedMessage(normalizedId, telemetry), 'connected');
+        markFormConnected(form, normalizedId);
         return normalizedId;
     }
 
@@ -534,7 +578,12 @@
         });
 
         document.querySelectorAll('form[data-iot-command]').forEach((form) => {
+            setIotSubmitEnabled(form, false);
             form.addEventListener('submit', handleSubmit);
+
+            form.querySelector('[data-iot-device-input]')?.addEventListener('input', () => {
+                markFormDisconnected(form);
+            });
         });
 
         window.addEventListener('scooter:ble-status', (event) => {
@@ -616,6 +665,7 @@
 
             connect(scooterId, input.closest('form')).catch((error) => {
                 setStatus(input.closest('form'), error.message || 'Bluetooth connection failed.', 'error');
+                markFormDisconnected(input.closest('form'));
             });
         });
 
@@ -646,6 +696,7 @@
         disconnect: disconnectBluetooth,
         normalizeScooterId,
         startNearbyScan,
+        renderNearbyScooters,
         serviceUuid: SERVICE_UUID,
         commandUuid: COMMAND_UUID,
         telemetryUuid: TELEMETRY_UUID,

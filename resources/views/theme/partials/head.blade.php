@@ -977,7 +977,7 @@
         }
     </style>
 </head>
-<script src="{{ URL::asset('assets/js/scooter-iot-bridge.js') }}?v=20260620-1"></script>
+<script src="{{ URL::asset('assets/js/scooter-iot-bridge.js') }}?v=20260620-2"></script>
 <script>
     document.addEventListener('DOMContentLoaded', () => {
         const navigationEntry = performance.getEntriesByType('navigation')[0];
@@ -1036,5 +1036,161 @@
             document.querySelectorAll('.alert').forEach((alert) => alert.remove());
             document.querySelectorAll('.app-toast').forEach((toast) => toast.remove());
         });
+
+        if (document.querySelector('[data-shared-scan]') && typeof window.openScanner !== 'function') {
+            const scannerModal = document.createElement('div');
+            scannerModal.className = 'scanner-modal';
+            scannerModal.id = 'scannerModal';
+            scannerModal.setAttribute('aria-hidden', 'true');
+            scannerModal.innerHTML = `
+                <div class="scanner-panel">
+                    <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+                        <div>
+                            <h2 class="panel-title mb-1">Scan Barcode</h2>
+                            <div class="panel-subtitle mb-0">Point the camera at the barcode to fill the field.</div>
+                        </div>
+                        <button type="button" class="btn btn-light-theme scanner-btn" id="closeScannerBtn" aria-label="Close scanner">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="scanner-video-wrap">
+                        <video id="scannerVideo" class="scanner-video" autoplay muted playsinline></video>
+                        <div class="scanner-frame"></div>
+                    </div>
+                    <div class="stack-sm mt-3">
+                        <div class="alert alert-danger d-none mb-0 py-2" id="scannerError"></div>
+                        <button type="button" class="btn btn-light-theme w-100" id="cancelScannerBtn">Cancel</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(scannerModal);
+
+            const scannerVideo = document.getElementById('scannerVideo');
+            const scannerError = document.getElementById('scannerError');
+            const closeScannerBtn = document.getElementById('closeScannerBtn');
+            const cancelScannerBtn = document.getElementById('cancelScannerBtn');
+            let scannerStream = null;
+            let scannerTargetInput = null;
+            let scannerFrameId = null;
+            let barcodeDetector = null;
+
+            function showScannerError(message) {
+                scannerError.textContent = message;
+                scannerError.classList.remove('d-none');
+            }
+
+            function clearScannerError() {
+                scannerError.textContent = '';
+                scannerError.classList.add('d-none');
+            }
+
+            function stopScanner() {
+                if (scannerFrameId) {
+                    cancelAnimationFrame(scannerFrameId);
+                    scannerFrameId = null;
+                }
+
+                if (scannerStream) {
+                    scannerStream.getTracks().forEach((track) => track.stop());
+                    scannerStream = null;
+                }
+
+                scannerVideo.srcObject = null;
+                scannerModal.classList.remove('is-open');
+                scannerModal.setAttribute('aria-hidden', 'true');
+                scannerTargetInput = null;
+                clearScannerError();
+            }
+
+            async function scanFrame() {
+                if (!barcodeDetector || !scannerVideo || scannerVideo.readyState < 2) {
+                    scannerFrameId = requestAnimationFrame(scanFrame);
+                    return;
+                }
+
+                try {
+                    const barcodes = await barcodeDetector.detect(scannerVideo);
+
+                    if (barcodes.length > 0 && scannerTargetInput) {
+                        const rawValue = (barcodes[0].rawValue || '').trim();
+
+                        if (rawValue !== '') {
+                            scannerTargetInput.value = window.ScooterIot?.normalizeScooterId
+                                ? window.ScooterIot.normalizeScooterId(rawValue)
+                                : rawValue;
+                            scannerTargetInput.dispatchEvent(new Event('input', { bubbles: true }));
+                            window.dispatchEvent(new CustomEvent('scooter:qr-scanned', {
+                                detail: {
+                                    value: rawValue,
+                                    input: scannerTargetInput
+                                }
+                            }));
+                            stopScanner();
+                            return;
+                        }
+                    }
+                } catch (error) {
+                    showScannerError('Unable to read barcode from camera.');
+                }
+
+                scannerFrameId = requestAnimationFrame(scanFrame);
+            }
+
+            window.openScanner = async function openScanner(targetInputId) {
+                clearScannerError();
+
+                if (!('BarcodeDetector' in window)) {
+                    showScannerError('Barcode scanning is not supported on this device/browser.');
+                    scannerModal.classList.add('is-open');
+                    scannerModal.setAttribute('aria-hidden', 'false');
+                    return;
+                }
+
+                scannerTargetInput = document.getElementById(targetInputId);
+
+                if (!scannerTargetInput) {
+                    return;
+                }
+
+                try {
+                    barcodeDetector = new BarcodeDetector({
+                        formats: ['code_128', 'code_39', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'qr_code']
+                    });
+
+                    scannerStream = await navigator.mediaDevices.getUserMedia({
+                        video: {
+                            facingMode: {
+                                ideal: 'environment'
+                            }
+                        },
+                        audio: false
+                    });
+
+                    scannerVideo.srcObject = scannerStream;
+                    await scannerVideo.play();
+                    scannerModal.classList.add('is-open');
+                    scannerModal.setAttribute('aria-hidden', 'false');
+                    scannerFrameId = requestAnimationFrame(scanFrame);
+                } catch (error) {
+                    showScannerError('Camera access failed. Please allow camera permission and try again.');
+                    scannerModal.classList.add('is-open');
+                    scannerModal.setAttribute('aria-hidden', 'false');
+                }
+            }
+
+            document.querySelectorAll('[data-shared-scan]').forEach((button) => {
+                button.addEventListener('click', () => {
+                    window.openScanner(button.dataset.targetInput);
+                });
+            });
+
+            closeScannerBtn.addEventListener('click', stopScanner);
+            cancelScannerBtn.addEventListener('click', stopScanner);
+            scannerModal.addEventListener('click', (event) => {
+                if (event.target === scannerModal) {
+                    stopScanner();
+                }
+            });
+        }
     });
 </script>

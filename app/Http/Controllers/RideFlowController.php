@@ -69,6 +69,34 @@ class RideFlowController extends Controller
         return view('theme.book-flow');
     }
 
+    public function scooterBatteries()
+    {
+        $this->ensureUserLoggedIn();
+
+        return view('theme.scooter-batteries');
+    }
+
+    public function scooterUsage()
+    {
+        $this->ensureUserLoggedIn();
+
+        $branch = $this->currentBranch();
+        abort_unless($branch, 403);
+
+        $assignedScooters = BookingRide::query()
+            ->selectRaw('ride_number, count(*) as assign_count, max(start_time) as last_assigned_at')
+            ->whereNotNull('ride_number')
+            ->where('ride_number', '!=', '')
+            ->where('start_time', '>=', now()->subDay())
+            ->whereHas('booking', fn ($query) => $query->where('branch_id', $branch->id))
+            ->groupBy('ride_number')
+            ->orderByDesc('assign_count')
+            ->orderBy('ride_number')
+            ->get();
+
+        return view('theme.scooter-usage', compact('assignedScooters'));
+    }
+
     public function customerLookup(Request $request): JsonResponse
     {
         $request->validate([
