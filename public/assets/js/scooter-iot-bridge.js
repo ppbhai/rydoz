@@ -4,6 +4,7 @@
     const TELEMETRY_UUID = '7b6a1002-2f6d-4e7f-9b2e-30a0bbd80101';
     const textDecoder = new TextDecoder();
     const MIN_ASSIGN_BATTERY_PERCENT = 10;
+    const LIVE_STATS_INTERVAL_MS = 60000;
 
     let webDevice = null;
     let commandCharacteristic = null;
@@ -14,6 +15,8 @@
     let latestTelemetry = null;
     const nearbyScooters = new Map();
     const latestTelemetryByScooter = new Map();
+    let liveStatsTimer = null;
+    let liveStatsReportTimeout = null;
 
     function setStatus(form, message, state) {
         const status = form?.querySelector('[data-iot-status]');
@@ -415,6 +418,68 @@
         await nativeCall('startNearbyScan');
     }
 
+    async function reportLiveStats() {
+        const url = document.querySelector('meta[name="scooter-live-stats-url"]')?.content;
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+
+        if (!url || !csrfToken) {
+            return;
+        }
+
+        const staleBefore = Date.now() - LIVE_STATS_INTERVAL_MS;
+        const scooters = Array.from(nearbyScooters.values())
+            .filter((scooter) => scooter.seenAt >= staleBefore)
+            .map((scooter) => ({
+                scooterId: scooter.scooterId,
+                battery: scooter.battery,
+            }));
+
+        await fetch(url, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': csrfToken,
+            },
+            body: JSON.stringify({ scooters }),
+        });
+    }
+
+    function scheduleLiveStatsReport(delayMs = 1200) {
+        if (liveStatsReportTimeout) {
+            window.clearTimeout(liveStatsReportTimeout);
+        }
+
+        liveStatsReportTimeout = window.setTimeout(() => {
+            liveStatsReportTimeout = null;
+            reportLiveStats().catch((error) => {
+                console.warn('Live scooter stats could not be reported.', error);
+            });
+        }, delayMs);
+    }
+
+    function startLiveStatsReporting() {
+        if (liveStatsTimer || !hasNativeBridge() || typeof window.ScooterBle.startNearbyScan !== 'function') {
+            return;
+        }
+
+        nativeCall('startNearbyScan').catch((error) => {
+            console.warn('Live scooter scan could not start.', error);
+        });
+
+        liveStatsTimer = window.setInterval(() => {
+            reportLiveStats().catch((error) => {
+                console.warn('Live scooter stats could not be reported.', error);
+            });
+        }, LIVE_STATS_INTERVAL_MS);
+
+        window.setTimeout(() => {
+            reportLiveStats().catch(() => {});
+        }, 8000);
+    }
+
     async function connect(scooterId, form) {
         const payload = parseScooterPayload(scooterId);
         const normalizedId = payload.scooterId;
@@ -644,6 +709,7 @@
                 seenAt: Date.now(),
             });
             renderNearbyScooters();
+            scheduleLiveStatsReport();
         });
 
         window.addEventListener('scooter:nearby-scan-status', (event) => {
@@ -672,6 +738,7 @@
         startNearbyScan().catch((error) => {
             console.warn('Nearby scooter scan could not start.', error);
         });
+        startLiveStatsReporting();
 
         window.setInterval(() => {
             const staleBefore = Date.now() - 30000;

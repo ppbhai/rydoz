@@ -54,6 +54,7 @@ Route::get('logout', function () {
 Route::get('/adminprofileupdate/{admin}', [LoginController::class, 'showprofile'])->name('adminprofileupdate');
 Route::post('/adminprofileedit/{admin}', [LoginController::class, 'profileedit'])->name('adminprofileedit');
 Route::get('/dashboard', [LoginController::class, 'dashboard'])->name('dashboard');
+Route::get('/dashboard/live-stats', [LoginController::class, 'liveStats'])->name('dashboard.live-stats');
 
 
 
@@ -146,6 +147,8 @@ Route::get('/index', [RideFlowController::class, 'index'])->name('index')->middl
 Route::get('/scooter-batteries', [RideFlowController::class, 'scooterBatteries'])
     ->name('scooter.batteries')
     ->middleware('desktop.redirect');
+Route::post('/scooter-live-stats', [RideFlowController::class, 'updateScooterLiveStats'])
+    ->name('scooter.live-stats');
 Route::get('/scooter-usage', [RideFlowController::class, 'scooterUsage'])
     ->name('scooter.usage')
     ->middleware('desktop.redirect');

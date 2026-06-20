@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Booking;
 use App\Models\BookingRide;
 use App\Models\Branch;
+use App\Models\BranchLiveStat;
 use App\Models\BranchVehicle;
 use App\Models\DiscountReason;
 use App\Models\User;
@@ -95,6 +96,67 @@ class RideFlowController extends Controller
             ->get();
 
         return view('theme.scooter-usage', compact('assignedScooters'));
+    }
+
+    public function updateScooterLiveStats(Request $request): JsonResponse
+    {
+        $this->ensureUserLoggedIn();
+
+        $branch = $this->currentBranch();
+        abort_unless($branch, 403);
+
+        Log::info('Scooter live stats request started', [
+            'branch_id' => $branch->id,
+            'branch_name' => $branch->name,
+            'payload' => $request->all(),
+        ]);
+
+        $validated = $request->validate([
+            'scooters' => ['nullable', 'array'],
+            'scooters.*.scooterId' => ['required_with:scooters', 'string', 'max:100'],
+            'scooters.*.battery' => ['nullable', 'numeric', 'min:0', 'max:100'],
+        ]);
+
+        $scooters = collect($validated['scooters'] ?? [])
+            ->map(function (array $scooter) {
+                return [
+                    'scooterId' => trim((string) ($scooter['scooterId'] ?? '')),
+                    'battery' => array_key_exists('battery', $scooter) && $scooter['battery'] !== null
+                        ? min(100, max(0, (int) round((float) $scooter['battery'])))
+                        : null,
+                ];
+            })
+            ->filter(fn (array $scooter) => $scooter['scooterId'] !== '')
+            ->unique('scooterId')
+            ->values();
+
+        $lowBatteryScooters = $scooters
+            ->filter(fn (array $scooter) => $scooter['battery'] !== null && $scooter['battery'] <= 10)
+            ->count();
+
+        Log::info('Scooter live stats report received', [
+            'branch_id' => $branch->id,
+            'branch_name' => $branch->name,
+            'online_scooters' => $scooters->count(),
+            'low_battery_scooters' => $lowBatteryScooters,
+            'scooters' => $scooters->all(),
+        ]);
+
+        BranchLiveStat::updateOrCreate(
+            ['branch_id' => $branch->id],
+            [
+                'online_scooters' => $scooters->count(),
+                'low_battery_scooters' => $lowBatteryScooters,
+                'scooters' => $scooters->all(),
+                'reported_at' => now(),
+            ]
+        );
+
+        return response()->json([
+            'status' => true,
+            'online_scooters' => $scooters->count(),
+            'low_battery_scooters' => $lowBatteryScooters,
+        ]);
     }
 
     public function customerLookup(Request $request): JsonResponse

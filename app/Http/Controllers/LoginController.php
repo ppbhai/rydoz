@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\Booking;
+use App\Models\BookingRide;
 use App\Models\Branch;
+use App\Models\BranchLiveStat;
 use App\Models\BranchVehicle;
 use App\Models\User;
 use App\Models\Vehicle;
@@ -47,6 +49,9 @@ class LoginController extends Controller
         $totalRevenue = (float) Booking::where('status', 'completed')->sum('final_amount');
         $totalBranches = Branch::count();
         $totalVehicles = class_exists(BranchVehicle::class) ? BranchVehicle::count() : Vehicle::count();
+        $branches = Branch::orderBy('name')->get();
+        $selectedBranchId = (int) request('branch_id', $branches->first()?->id ?? 0);
+        $liveDashboardStats = $this->liveDashboardStats($selectedBranchId);
 
         return view('index', compact(
             'totalCustomers',
@@ -54,8 +59,55 @@ class LoginController extends Controller
             'totalDeals',
             'totalRevenue',
             'totalVehicles',
-            'totalBranches'
+            'totalBranches',
+            'branches',
+            'selectedBranchId',
+            'liveDashboardStats'
         ));
+    }
+
+    public function liveStats(Request $request)
+    {
+        $branchId = (int) $request->query('branch_id');
+
+        return response()->json([
+            'status' => true,
+            'stats' => $this->liveDashboardStats($branchId),
+        ]);
+    }
+
+    protected function liveDashboardStats(int $branchId): array
+    {
+        $branch = Branch::find($branchId) ?: Branch::orderBy('name')->first();
+
+        if (!$branch) {
+            return [
+                'branch_id' => null,
+                'total_scooters' => 0,
+                'ongoing_rides' => 0,
+                'available_scooters' => 0,
+                'online_scooters' => 0,
+                'low_battery_scooters' => 0,
+                'reported_at' => null,
+            ];
+        }
+
+        $totalScooters = BranchVehicle::where('branch_id', $branch->id)->count();
+        $ongoingRides = BookingRide::where('status', 'ongoing')
+            ->whereHas('booking', fn ($query) => $query->where('branch_id', $branch->id))
+            ->count();
+        $liveStat = BranchLiveStat::where('branch_id', $branch->id)->first();
+        $hasFreshLiveStat = $liveStat?->reported_at && $liveStat->reported_at->greaterThanOrEqualTo(now()->subMinutes(2));
+
+        return [
+            'branch_id' => $branch->id,
+            'total_scooters' => $totalScooters,
+            'ongoing_rides' => $ongoingRides,
+            'available_scooters' => max(0, $totalScooters - $ongoingRides),
+            'online_scooters' => $hasFreshLiveStat ? (int) $liveStat->online_scooters : 0,
+            'low_battery_scooters' => $hasFreshLiveStat ? (int) $liveStat->low_battery_scooters : 0,
+            'reported_at' => $hasFreshLiveStat ? $liveStat->reported_at->format('d M Y h:i A') : null,
+        ];
     }
     public function showprofile(Admin $admin)
     {
