@@ -107,6 +107,35 @@
                             </div>
                         </div>
                     </div>
+
+                    <div class="table-responsive mt-3">
+                        <table class="table table-bordered align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Scooter Name</th>
+                                    <th>Battery</th>
+                                    <th>Status</th>
+                                    <th>Assigned Ride Count (24 Hours)</th>
+                                    <th>Total Ride KM (Lifetime)</th>
+                                </tr>
+                            </thead>
+                            <tbody data-live-scooter-rows>
+                                @forelse ($liveDashboardStats['scooters'] as $scooter)
+                                    <tr>
+                                        <td>{{ $scooter['scooter_name'] }}</td>
+                                        <td>{{ $scooter['battery'] !== null ? $scooter['battery'] . '%' : '-' }}</td>
+                                        <td>{{ $scooter['status'] }}</td>
+                                        <td>{{ number_format($scooter['assigned_24h_count']) }}</td>
+                                        <td>{{ number_format((float) $scooter['lifetime_km'], 3) }} km</td>
+                                    </tr>
+                                @empty
+                                    <tr>
+                                        <td colspan="5" class="text-center text-muted">No scooter data found for this branch.</td>
+                                    </tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
@@ -117,6 +146,7 @@
     document.addEventListener('DOMContentLoaded', () => {
         const branchSelect = document.getElementById('liveBranchSelect');
         const reportedAt = document.querySelector('[data-live-reported-at]');
+        const scooterRows = document.querySelector('[data-live-scooter-rows]');
         const statsUrl = @json(route('dashboard.live-stats'));
 
         function setStat(key, value) {
@@ -125,6 +155,44 @@
             if (target) {
                 target.textContent = new Intl.NumberFormat().format(Number(value || 0));
             }
+        }
+
+        function renderScooterRows(scooters) {
+            if (!scooterRows) {
+                return;
+            }
+
+            scooterRows.innerHTML = '';
+
+            if (!Array.isArray(scooters) || scooters.length === 0) {
+                const row = document.createElement('tr');
+                const cell = document.createElement('td');
+                cell.colSpan = 5;
+                cell.className = 'text-center text-muted';
+                cell.textContent = 'No scooter data found for this branch.';
+                row.appendChild(cell);
+                scooterRows.appendChild(row);
+                return;
+            }
+
+            scooters.forEach((scooter) => {
+                const row = document.createElement('tr');
+                const values = [
+                    scooter.scooter_name || '-',
+                    scooter.battery !== null && typeof scooter.battery !== 'undefined' ? `${scooter.battery}%` : '-',
+                    scooter.status || '-',
+                    new Intl.NumberFormat().format(Number(scooter.assigned_24h_count || 0)),
+                    `${Number(scooter.lifetime_km || 0).toFixed(3)} km`,
+                ];
+
+                values.forEach((value) => {
+                    const cell = document.createElement('td');
+                    cell.textContent = value;
+                    row.appendChild(cell);
+                });
+
+                scooterRows.appendChild(row);
+            });
         }
 
         async function refreshLiveDashboard() {
@@ -147,6 +215,7 @@
             }
 
             Object.entries(payload.stats).forEach(([key, value]) => setStat(key, value));
+            renderScooterRows(payload.stats.scooters);
 
             if (reportedAt) {
                 reportedAt.textContent = payload.stats.reported_at

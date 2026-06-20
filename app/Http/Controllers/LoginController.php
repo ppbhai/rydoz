@@ -89,6 +89,7 @@ class LoginController extends Controller
                 'online_scooters' => 0,
                 'low_battery_scooters' => 0,
                 'reported_at' => null,
+                'scooters' => [],
             ];
         }
 
@@ -98,6 +99,7 @@ class LoginController extends Controller
             ->count();
         $liveStat = BranchLiveStat::where('branch_id', $branch->id)->first();
         $hasFreshLiveStat = $liveStat?->reported_at && $liveStat->reported_at->greaterThanOrEqualTo(now()->subMinutes(2));
+        $liveScooters = $hasFreshLiveStat ? collect($liveStat->scooters ?: []) : collect();
 
         return [
             'branch_id' => $branch->id,
@@ -107,7 +109,86 @@ class LoginController extends Controller
             'online_scooters' => $hasFreshLiveStat ? (int) $liveStat->online_scooters : 0,
             'low_battery_scooters' => $hasFreshLiveStat ? (int) $liveStat->low_battery_scooters : 0,
             'reported_at' => $hasFreshLiveStat ? $liveStat->reported_at->format('d M Y h:i A') : null,
+            'scooters' => $this->liveDashboardScooters($branch->id, $liveScooters),
         ];
+    }
+
+    protected function liveDashboardScooters(int $branchId, $liveScooters): array
+    {
+        $liveBatteryByScooter = collect($liveScooters)
+            ->mapWithKeys(function (array $scooter) {
+                $scooterId = trim((string) ($scooter['scooterId'] ?? ''));
+
+                if ($scooterId === '') {
+                    return [];
+                }
+
+                return [
+                    $scooterId => array_key_exists('battery', $scooter) && $scooter['battery'] !== null
+                        ? (int) $scooter['battery']
+                        : null,
+                ];
+            });
+
+        $rideQuery = BookingRide::query()
+            ->whereNotNull('ride_number')
+            ->where('ride_number', '!=', '')
+            ->whereHas('booking', fn ($query) => $query->where('branch_id', $branchId));
+
+        $rideNumbers = (clone $rideQuery)
+            ->select('ride_number')
+            ->distinct()
+            ->pluck('ride_number');
+
+        $ongoingRideNumbers = (clone $rideQuery)
+            ->where('status', 'ongoing')
+            ->pluck('ride_number')
+            ->unique()
+            ->flip();
+
+        $assignCountsLastDay = (clone $rideQuery)
+            ->where('start_time', '>=', now()->subDay())
+            ->selectRaw('ride_number, count(*) as assign_count')
+            ->groupBy('ride_number')
+            ->pluck('assign_count', 'ride_number');
+
+        $lifetimeKm = (clone $rideQuery)
+            ->selectRaw('ride_number, coalesce(sum(trip_distance_km), 0) as total_km')
+            ->groupBy('ride_number')
+            ->pluck('total_km', 'ride_number');
+
+        return $rideNumbers
+            ->merge($liveBatteryByScooter->keys())
+            ->filter()
+            ->unique()
+            ->map(function (string $scooterId) use ($liveBatteryByScooter, $ongoingRideNumbers, $assignCountsLastDay, $lifetimeKm) {
+                $battery = $liveBatteryByScooter->has($scooterId) ? $liveBatteryByScooter->get($scooterId) : null;
+
+                return [
+                    'scooter_name' => $scooterId,
+                    'battery' => $battery,
+                    'status' => $ongoingRideNumbers->has($scooterId) ? 'ongoing' : 'onready',
+                    'assigned_24h_count' => (int) ($assignCountsLastDay[$scooterId] ?? 0),
+                    'lifetime_km' => round((float) ($lifetimeKm[$scooterId] ?? 0), 3),
+                ];
+            })
+            ->sort(function (array $left, array $right) {
+                if ($left['battery'] === null && $right['battery'] !== null) {
+                    return 1;
+                }
+
+                if ($left['battery'] !== null && $right['battery'] === null) {
+                    return -1;
+                }
+
+                if ($left['battery'] !== $right['battery']) {
+                    return ($left['battery'] ?? 101) <=> ($right['battery'] ?? 101);
+                }
+
+                return strcmp($left['scooter_name'], $right['scooter_name']);
+            })
+            ->values()
+            ->all();
     }
     public function showprofile(Admin $admin)
     {

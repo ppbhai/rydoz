@@ -32,7 +32,7 @@
                             data-search-text="{{ strtolower($scooter->ride_number) }}">
                             <strong>{{ $scooter->ride_number }}</strong>
                             <span class="nearby-scooter-battery" data-level="good">
-                                {{ $scooter->assign_count }} assign
+                                {{ $scooter->assign_count }}
                             </span>
                         </div>
                     @empty
