@@ -2,8 +2,8 @@
     const SERVICE_UUID = '7b6a1000-2f6d-4e7f-9b2e-30a0bbd80101';
     const COMMAND_UUID = '7b6a1001-2f6d-4e7f-9b2e-30a0bbd80101';
     const TELEMETRY_UUID = '7b6a1002-2f6d-4e7f-9b2e-30a0bbd80101';
-    const textEncoder = new TextEncoder();
     const textDecoder = new TextDecoder();
+    const MIN_ASSIGN_BATTERY_PERCENT = 10;
 
     let webDevice = null;
     let commandCharacteristic = null;
@@ -106,6 +106,10 @@
     }
 
     async function nativeCall(name, payload) {
+        if (!window.ScooterBle || typeof window.ScooterBle[name] !== 'function') {
+            throw new Error('Bluetooth control is only available in the installed app.');
+        }
+
         const result = window.ScooterBle[name](JSON.stringify(payload || {}));
 
         if (result && typeof result.then === 'function') {
@@ -116,7 +120,13 @@
     }
 
     async function connectNative(scooterId, mac) {
+        const connected = waitForWindowEvent(
+            'scooter:ble-connected',
+            (event) => (event.detail?.scooterId || scooterId) === scooterId,
+            15000
+        );
         await nativeCall('connect', { scooterId, mac, serviceUuid: SERVICE_UUID });
+        await connected;
         activeScooterId = scooterId;
         return true;
     }
@@ -127,37 +137,25 @@
     }
 
     async function connectWebBluetooth(scooterId) {
-        if (!navigator.bluetooth) {
-            throw new Error('Bluetooth is not available in this browser. Use the installed WebView app.');
-        }
-
-        webDevice = await navigator.bluetooth.requestDevice({
-            filters: [{ namePrefix: `RYDOZ-${scooterId}` }],
-            optionalServices: [SERVICE_UUID],
-        });
-
-        const server = await webDevice.gatt.connect();
-        const service = await server.getPrimaryService(SERVICE_UUID);
-        commandCharacteristic = await service.getCharacteristic(COMMAND_UUID);
-        telemetryCharacteristic = await service.getCharacteristic(TELEMETRY_UUID);
-
-        telemetryCharacteristic.addEventListener('characteristicvaluechanged', (event) => {
-            const payload = textDecoder.decode(event.target.value);
-            window.dispatchEvent(new CustomEvent('scooter:telemetry', { detail: safeJson(payload) }));
-        });
-
-        await telemetryCharacteristic.startNotifications();
-        activeScooterId = scooterId;
-        return true;
+        throw new Error('Bluetooth control is only available in the installed app.');
     }
 
     async function sendWebBluetooth(command) {
-        if (!commandCharacteristic) {
-            throw new Error('Scooter Bluetooth is not connected.');
+        throw new Error('Bluetooth control is only available in the installed app.');
+    }
+
+    async function disconnectBluetooth() {
+        if (hasNativeBridge() && typeof window.ScooterBle.disconnect === 'function') {
+            await nativeCall('disconnect');
         }
 
-        await commandCharacteristic.writeValue(textEncoder.encode(`${command}\n`));
-        return true;
+        if (webDevice?.gatt?.connected) {
+            webDevice.gatt.disconnect();
+        }
+
+        commandCharacteristic = null;
+        telemetryCharacteristic = null;
+        activeScooterId = '';
     }
 
     async function readNativeTelemetry() {
@@ -227,8 +225,97 @@
         }
     }
 
+    function telemetryBattery(data) {
+        if (!data || data.raw || typeof data.battery === 'undefined') {
+            return null;
+        }
+
+        const battery = Number(data.battery);
+
+        return Number.isFinite(battery) ? battery : null;
+    }
+
+    function telemetryKm(data) {
+        if (!data || data.raw || typeof data.km === 'undefined') {
+            return null;
+        }
+
+        const km = Number(data.km);
+
+        return Number.isFinite(km) ? km : null;
+    }
+
+    function formatConnectedMessage(scooterId, telemetry) {
+        const parts = [`Bluetooth connected${scooterId ? `: ${scooterId}` : ''}`];
+        const battery = telemetryBattery(telemetry);
+        const km = telemetryKm(telemetry);
+
+        if (battery !== null) {
+            parts.push(`Battery ${battery}%`);
+        }
+
+        if (km !== null) {
+            parts.push(`${km.toFixed(3)} km`);
+        }
+
+        return parts.join(' | ');
+    }
+
+    function setBatteryInput(form, battery) {
+        setHiddenInput(form, '[data-iot-battery-input]', battery !== null ? String(battery) : '');
+    }
+
+    async function refreshTelemetry(form, scooterId) {
+        const telemetry = await readFinalTelemetry();
+        const remembered = latestTelemetryByScooter.get(scooterId || activeScooterId) || latestTelemetry;
+        const selectedTelemetry = telemetry && !telemetry.raw ? telemetry : remembered;
+
+        if (selectedTelemetry) {
+            rememberTelemetry(selectedTelemetry);
+            captureKmOnForm(form, selectedTelemetry);
+        }
+
+        return selectedTelemetry || null;
+    }
+
+    async function ensureAssignableBattery(form, scooterId) {
+        setStatus(form, 'Checking scooter battery...', 'pending');
+        const telemetry = await refreshTelemetry(form, scooterId);
+        const battery = telemetryBattery(telemetry);
+
+        setBatteryInput(form, battery);
+
+        if (battery !== null && battery <= MIN_ASSIGN_BATTERY_PERCENT) {
+            throw new Error(`Battery ${battery}% is too low. Assign another scooter.`);
+        }
+
+        setStatus(form, formatConnectedMessage(scooterId, telemetry), 'connected');
+        return telemetry;
+    }
+
     function wait(ms) {
         return new Promise((resolve) => window.setTimeout(resolve, ms));
+    }
+
+    function waitForWindowEvent(name, predicate, timeoutMs) {
+        return new Promise((resolve, reject) => {
+            const timeout = window.setTimeout(() => {
+                window.removeEventListener(name, onEvent);
+                reject(new Error('Bluetooth connection timed out.'));
+            }, timeoutMs);
+
+            function onEvent(event) {
+                if (predicate && !predicate(event)) {
+                    return;
+                }
+
+                window.clearTimeout(timeout);
+                window.removeEventListener(name, onEvent);
+                resolve(event);
+            }
+
+            window.addEventListener(name, onEvent);
+        });
     }
 
     function renderNearbyScooters() {
@@ -295,7 +382,8 @@
         }
 
         if (hasNativeBridge() && activeScooterId === normalizedId) {
-            setStatus(form, `Bluetooth selected: ${normalizedId}`, 'connected');
+            const telemetry = latestTelemetryByScooter.get(normalizedId) || latestTelemetry;
+            setStatus(form, formatConnectedMessage(normalizedId, telemetry), 'connected');
             return normalizedId;
         }
 
@@ -308,7 +396,8 @@
             await connectWebBluetooth(normalizedId);
         }
 
-        setStatus(form, `Connected: ${normalizedId}`, 'connected');
+        const telemetry = await refreshTelemetry(form, normalizedId);
+        setStatus(form, formatConnectedMessage(normalizedId, telemetry), 'connected');
         return normalizedId;
     }
 
@@ -395,6 +484,9 @@
             const scooterId = await connect(input.value, form);
             input.value = scooterId || preparedScooterId;
             syncVehicleNumberFromIotInput(input);
+            if (command === 'START') {
+                await ensureAssignableBattery(form, scooterId);
+            }
             setStatus(form, command === 'START' ? 'Powering scooter on...' : 'Powering scooter off...', 'pending');
             if (command === 'START') {
                 await sendCommand('RESET_KM', form);
@@ -405,15 +497,26 @@
             if (command === 'STOP') {
                 setStatus(form, 'Waiting for final KM...', 'pending');
                 await wait(4500);
-                await readFinalTelemetry();
+                const telemetry = await refreshTelemetry(form, scooterId);
                 const hasKm = prepareTripTelemetry(form, scooterId);
-                setStatus(form, hasKm ? 'Final KM captured.' : 'Final KM not received.', hasKm ? 'connected' : 'error');
+                const battery = telemetryBattery(telemetry);
+                setBatteryInput(form, battery);
+                const km = telemetryKm(telemetry);
+                setStatus(
+                    form,
+                    hasKm
+                        ? `Final KM captured: ${(km ?? Number(form.querySelector('[data-iot-distance-input]')?.value || 0)).toFixed(3)} km${battery !== null ? ` | Battery ${battery}%` : ''}`
+                        : `Final KM not received${battery !== null ? ` | Battery ${battery}%` : ''}.`,
+                    hasKm ? 'connected' : 'error'
+                );
             } else {
                 await wait(1200);
             }
+            await disconnectBluetooth();
             pendingSubmit = form;
             form.requestSubmit();
         } catch (error) {
+            await disconnectBluetooth().catch(() => {});
             setStatus(form, error.message || 'Bluetooth command failed.', 'error');
             window.showAppToast?.(error.message || 'Bluetooth command failed.', 'error');
         }
@@ -442,7 +545,8 @@
 
         window.addEventListener('scooter:ble-connected', (event) => {
             const scooterId = event.detail?.scooterId || activeScooterId || '';
-            setGlobalStatus(`Bluetooth connected${scooterId ? `: ${scooterId}` : ''}`, 'connected');
+            const telemetry = latestTelemetryByScooter.get(scooterId) || latestTelemetry;
+            setGlobalStatus(formatConnectedMessage(scooterId, telemetry), 'connected');
         });
 
         window.addEventListener('scooter:telemetry', (event) => {
@@ -464,6 +568,7 @@
 
             if (typeof data.battery !== 'undefined') {
                 parts.push(`${data.battery}%`);
+                setBatteryInput(form, Number(data.battery));
             }
 
             if (typeof data.km !== 'undefined') {
@@ -538,6 +643,7 @@
     window.ScooterIot = {
         connect,
         sendCommand,
+        disconnect: disconnectBluetooth,
         normalizeScooterId,
         startNearbyScan,
         serviceUuid: SERVICE_UUID,

@@ -90,6 +90,7 @@
                                         <input type="hidden" name="return_search" value="{{ $search }}">
                                         <input type="hidden" name="return_booking" value="{{ $booking->id }}">
                                         <input type="hidden" name="iot_distance_km" value="" data-iot-distance-input>
+                                        <input type="hidden" name="iot_battery_percent" value="" data-iot-battery-input>
 
                                         <div style="display: flex; justify-content:space-between">
                                             <div class="assign-name" style="font-size: 15px; font-weight:700;">{{ $ride->vehicle_name }}</div>
@@ -148,6 +149,7 @@
                                     <input type="hidden" name="return_search" value="{{ $search }}">
                                     <input type="hidden" name="return_booking" value="{{ $booking->id }}">
                                     <input type="hidden" name="iot_distance_km" value="" data-iot-distance-input>
+                                    <input type="hidden" name="iot_battery_percent" value="" data-iot-battery-input>
                                     <div class="assign-row-top">
                                         <div class="assign-name">Vehicle ID</div>
                                         <div class="scanner-field">

@@ -32,12 +32,16 @@ class AndroidScooterBleBridge(
 
     private var gatt: BluetoothGatt? = null
     private var commandCharacteristic: BluetoothGattCharacteristic? = null
+    private var telemetryCharacteristic: BluetoothGattCharacteristic? = null
+    private var latestTelemetryJson: String? = null
     private var pendingScooterId: String = ""
+    private var nearbyScanCallback: ScanCallback? = null
 
     @JavascriptInterface
     fun connect(json: String): String {
         val payload = JSONObject(json)
         pendingScooterId = payload.optString("scooterId").trim()
+        disconnectGatt()
         scanForScooter(pendingScooterId)
         return """{"ok":true}"""
     }
@@ -48,6 +52,38 @@ class AndroidScooterBleBridge(
         val characteristic = commandCharacteristic ?: return """{"ok":false,"error":"not_connected"}"""
         characteristic.value = "$command\n".toByteArray(Charsets.UTF_8)
         gatt?.writeCharacteristic(characteristic)
+        return """{"ok":true}"""
+    }
+
+    @JavascriptInterface
+    fun readTelemetry(json: String = "{}"): String {
+        telemetryCharacteristic?.let { characteristic ->
+            gatt?.readCharacteristic(characteristic)
+        }
+
+        val telemetry = latestTelemetryJson
+        return if (telemetry.isNullOrBlank()) {
+            """{"ok":true,"telemetry":null}"""
+        } else {
+            """{"ok":true,"telemetry":$telemetry}"""
+        }
+    }
+
+    @JavascriptInterface
+    fun getLastTelemetry(): String {
+        return latestTelemetryJson ?: """{"raw":null}"""
+    }
+
+    @JavascriptInterface
+    fun disconnect(json: String = "{}"): String {
+        disconnectGatt()
+        emitStatus("Bluetooth disconnected")
+        return """{"ok":true}"""
+    }
+
+    @JavascriptInterface
+    fun startNearbyScan(json: String = "{}"): String {
+        scanNearbyScooters()
         return """{"ok":true}"""
     }
 
@@ -85,6 +121,7 @@ class AndroidScooterBleBridge(
                 gatt.discoverServices()
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 commandCharacteristic = null
+                telemetryCharacteristic = null
                 emitStatus("Bluetooth disconnected")
             }
         }
@@ -94,6 +131,7 @@ class AndroidScooterBleBridge(
             val service = gatt.getService(serviceUuid) ?: return emitStatus("Scooter service not found")
             commandCharacteristic = service.getCharacteristic(commandUuid)
             val telemetry = service.getCharacteristic(telemetryUuid)
+            telemetryCharacteristic = telemetry
 
             if (telemetry != null) {
                 gatt.setCharacteristicNotification(telemetry, true)
@@ -104,6 +142,17 @@ class AndroidScooterBleBridge(
             }
 
             emitConnected(pendingScooterId)
+            telemetry?.let { gatt.readCharacteristic(it) }
+        }
+
+        override fun onCharacteristicRead(
+            gatt: BluetoothGatt,
+            characteristic: BluetoothGattCharacteristic,
+            status: Int
+        ) {
+            if (characteristic.uuid == telemetryUuid && status == BluetoothGatt.GATT_SUCCESS) {
+                emitTelemetry(characteristic.value.toString(Charsets.UTF_8))
+            }
         }
 
         override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
@@ -113,8 +162,89 @@ class AndroidScooterBleBridge(
         }
     }
 
+    @SuppressLint("MissingPermission")
+    private fun scanNearbyScooters() {
+        val scanner = bluetoothAdapter.bluetoothLeScanner ?: return emitNearbyScanStatus("Bluetooth scanner unavailable")
+        nearbyScanCallback?.let { scanner.stopScan(it) }
+
+        val filters = listOf(
+            ScanFilter.Builder()
+                .setServiceUuid(ParcelUuid(serviceUuid))
+                .build()
+        )
+        val settings = ScanSettings.Builder()
+            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
+            .build()
+
+        nearbyScanCallback = object : ScanCallback() {
+            override fun onScanResult(callbackType: Int, result: ScanResult) {
+                emitNearbyTelemetry(result)
+            }
+
+            override fun onBatchScanResults(results: MutableList<ScanResult>) {
+                results.forEach { emitNearbyTelemetry(it) }
+            }
+
+            override fun onScanFailed(errorCode: Int) {
+                emitNearbyScanStatus("Nearby scan failed: $errorCode")
+            }
+        }
+
+        emitNearbyScanStatus("Searching for powered scooters...")
+        scanner.startScan(filters, settings, nearbyScanCallback)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun emitNearbyTelemetry(result: ScanResult) {
+        val deviceName = result.device.name ?: return
+        if (!deviceName.startsWith("RYDOZ-")) {
+            return
+        }
+
+        val scooterId = deviceName.removePrefix("RYDOZ-")
+        val telemetry = parseTelemetry(result.scanRecord?.serviceData?.values?.firstOrNull())
+        val battery = telemetry?.optDouble("battery", Double.NaN)
+
+        if (battery == null || battery.isNaN()) {
+            return
+        }
+
+        val json = JSONObject()
+            .put("scooterId", scooterId)
+            .put("battery", battery.toInt())
+            .put("rssi", result.rssi)
+            .put("mac", result.device.address)
+
+        emitJs("window.dispatchEvent(new CustomEvent('scooter:nearby-telemetry',{detail:$json}))")
+    }
+
+    private fun parseTelemetry(bytes: ByteArray?): JSONObject? {
+        if (bytes == null || bytes.isEmpty()) {
+            return null
+        }
+
+        return try {
+            JSONObject(bytes.toString(Charsets.UTF_8))
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun disconnectGatt() {
+        commandCharacteristic = null
+        telemetryCharacteristic = null
+        gatt?.disconnect()
+        gatt?.close()
+        gatt = null
+    }
+
     private fun emitStatus(message: String) {
         emitJs("window.dispatchEvent(new CustomEvent('scooter:ble-status',{detail:{message:${JSONObject.quote(message)}}}))")
+    }
+
+    private fun emitNearbyScanStatus(message: String) {
+        emitJs("window.dispatchEvent(new CustomEvent('scooter:nearby-scan-status',{detail:{message:${JSONObject.quote(message)}}}))")
     }
 
     private fun emitConnected(scooterId: String) {
@@ -122,6 +252,7 @@ class AndroidScooterBleBridge(
     }
 
     private fun emitTelemetry(json: String) {
+        latestTelemetryJson = json
         emitJs("window.dispatchEvent(new CustomEvent('scooter:telemetry',{detail:$json}))")
     }
 

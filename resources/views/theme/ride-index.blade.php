@@ -93,6 +93,7 @@
                                             @csrf
                                             <input type="hidden" name="return_search" value="{{ $search }}">
                                             <input type="hidden" name="return_booking" value="{{ $booking->id }}">
+                                            <input type="hidden" name="iot_battery_percent" value="" data-iot-battery-input>
                                             <div class="assign-row-top">
                                                 <div class="assign-name">{{ $ride->vehicle_name }}</div>
                                                 <div style="display: flex;">

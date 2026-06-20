@@ -343,6 +343,7 @@ class RideFlowController extends Controller
         $validated = $request->validate([
             'ride_number' => ['nullable', 'string', 'max:50'],
             'iot_device_id' => ['nullable', 'string', 'max:100'],
+            'iot_battery_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'return_search' => ['nullable', 'string', 'max:255'],
             'return_booking' => ['nullable', 'integer'],
         ]);
@@ -356,6 +357,10 @@ class RideFlowController extends Controller
 
         if (($branch->vehicle_number_required || $branch->scanner_enabled) && $rideNumber === '') {
             return back()->with('error', 'Vehicle number is required for this ride.');
+        }
+
+        if (array_key_exists('iot_battery_percent', $validated) && $validated['iot_battery_percent'] !== null && (float) $validated['iot_battery_percent'] <= 10) {
+            return back()->with('error', 'Scooter battery is too low. Assign another scooter.');
         }
 
         if ($rideNumber !== '' && $this->rideNumberAlreadyAssigned($branch->id, $ride->branch_vehicle_id, $rideNumber, $ride->id)) {
@@ -544,7 +549,7 @@ class RideFlowController extends Controller
                 'end_time' => $endTime,
                 'actual_minutes' => $actualMinutes,
                 'trip_distance_km' => $tripDistanceKm,
-                'average_speed_kph' => $this->calculateAverageSpeedKph($tripDistanceKm, $ride, $endTime),
+                'average_speed_kph' => $this->calculateAverageSpeedKph($tripDistanceKm, $actualMinutes),
                 'charge' => $charge,
                 'status' => 'finished',
             ]);
@@ -901,7 +906,7 @@ class RideFlowController extends Controller
             'end_time' => $endTime,
             'actual_minutes' => $actualMinutes,
             'trip_distance_km' => $tripDistanceKm,
-            'average_speed_kph' => $this->calculateAverageSpeedKph($tripDistanceKm, $ride, $endTime),
+            'average_speed_kph' => $this->calculateAverageSpeedKph($tripDistanceKm, $actualMinutes),
             'charge' => $charge,
             'status' => 'finished',
         ]);
@@ -925,15 +930,13 @@ class RideFlowController extends Controller
         return round(max(0, (float) $value), 3);
     }
 
-    protected function calculateAverageSpeedKph(?float $tripDistanceKm, BookingRide $ride, $endTime): ?float
+    protected function calculateAverageSpeedKph(?float $tripDistanceKm, int $actualMinutes): ?float
     {
-        if ($tripDistanceKm === null || !$ride->start_time) {
+        if ($tripDistanceKm === null || $actualMinutes <= 0) {
             return null;
         }
 
-        $elapsedSeconds = max(1, $ride->start_time->diffInSeconds($endTime));
-
-        return round($tripDistanceKm / ($elapsedSeconds / 3600), 2);
+        return round($tripDistanceKm / ($actualMinutes / 60), 2);
     }
 
     protected function bookingReadyForPayment(Collection $rides): bool
