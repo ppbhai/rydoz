@@ -203,42 +203,75 @@ class BookingController extends Controller
         return response()->streamDownload(function () use ($bookings, $perRide, $includeOtp) {
             $handle = fopen('php://output', 'w');
 
-            $header = [
-                'Booking ID',
-                'Branch',
-                'Name',
-                'Mobile',
-            ];
+            $header = $perRide
+                ? [
+                    'No.',
+                    'Branch',
+                    'Booking ID',
+                    'Date',
+                    'Name',
+                    'Mobile No.',
+                ]
+                : [
+                    'Booking ID',
+                    'Branch',
+                    'Name',
+                    'Mobile',
+                ];
 
             if ($includeOtp) {
                 $header[] = 'Sent OTP';
             }
 
-            $header = array_merge($header, [
-                'Status',
-                $perRide ? 'Vehicle' : 'Vehicles',
-                'Vehicle ID',
-                'Actual Time',
-                'Total KM',
-                'Average Speed',
-                'Document Type',
-                'Total Amount',
-                'Discount Amount',
-                'Discount Reason',
-                'Final Amount',
-                'Payment Method',
-                'Created At',
-                'Paid At',
-            ]);
+            $header = $perRide
+                ? array_merge($header, [
+                    'Vehicle',
+                    'Vehicle ID',
+                    'Assign Ride Time',
+                    'Actual Time',
+                    'Battery Percentage When Assign',
+                    'Battery Percentage When Complete',
+                    'Used Battery',
+                    'Total KM',
+                    'Average Speed',
+                    'Total Amount',
+                    'Discount',
+                    'Final Payment',
+                    'Payment Method',
+                ])
+                : array_merge($header, [
+                    'Status',
+                    'Vehicles',
+                    'Vehicle ID',
+                    'Actual Time',
+                    'Total KM',
+                    'Average Speed',
+                    'Document Type',
+                    'Total Amount',
+                    'Discount Amount',
+                    'Discount Reason',
+                    'Final Amount',
+                    'Payment Method',
+                    'Created At',
+                    'Paid At',
+                ]);
 
             fputcsv($handle, $header);
+
+            $rowNumber = 1;
 
             foreach ($bookings as $booking) {
                 if ($perRide) {
                     foreach ($booking->rides as $ride) {
+                        $usedBattery = $ride->assign_battery_percent !== null && $ride->complete_battery_percent !== null
+                            ? max(0, (int) $ride->assign_battery_percent - (int) $ride->complete_battery_percent)
+                            : null;
+
                         $row = [
-                            $booking->id,
+                            $rowNumber++,
                             $booking->branchRelation?->name ?: $booking->branch_name ?: $booking->branch ?: '-',
+                            $booking->id,
+                            ($booking->paid_at ?: $booking->created_at)?->format('Y-m-d H:i:s'),
                             $booking->name,
                             $booking->mobile,
                         ];
@@ -248,20 +281,19 @@ class BookingController extends Controller
                         }
 
                         $row = array_merge($row, [
-                            $ride->status ?: $booking->status,
                             $ride->vehicle_name ?: '-',
                             $ride->ride_number ?: '-',
+                            $ride->start_time?->format('Y-m-d H:i:s') ?: '-',
                             $ride->actual_minutes ? $ride->actual_minutes . ' min' : '-',
+                            $ride->assign_battery_percent !== null ? $ride->assign_battery_percent . '%' : '-',
+                            $ride->complete_battery_percent !== null ? $ride->complete_battery_percent . '%' : '-',
+                            $usedBattery !== null ? $usedBattery . '%' : '-',
                             $ride->trip_distance_km !== null ? number_format((float) $ride->trip_distance_km, 3, '.', '') : '-',
                             $ride->average_speed_kph !== null ? number_format((float) $ride->average_speed_kph, 2, '.', '') : '-',
-                            $booking->document_type ?: 'Not selected',
                             number_format((float) $ride->charge, 2, '.', ''),
                             number_format((float) $ride->discount_amount, 2, '.', ''),
-                            $ride->discount_reason ?: ($booking->discount_reason ?: '-'),
                             number_format((float) ($ride->final_charge ?: $ride->charge), 2, '.', ''),
                             $booking->payment_method ?: '-',
-                            $booking->created_at?->format('Y-m-d H:i:s'),
-                            $booking->paid_at?->format('Y-m-d H:i:s'),
                         ]);
 
                         fputcsv($handle, $row);

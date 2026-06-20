@@ -398,6 +398,7 @@ class RideFlowController extends Controller
         $ride->update([
             'ride_number' => $rideNumber !== '' ? $rideNumber : null,
             'start_time' => now(),
+            'assign_battery_percent' => $this->validatedBatteryPercent($validated['iot_battery_percent'] ?? null),
             'status' => 'ongoing',
         ]);
 
@@ -467,6 +468,7 @@ class RideFlowController extends Controller
             'return_search' => ['nullable', 'string', 'max:255'],
             'return_booking' => ['nullable', 'integer'],
             'iot_distance_km' => ['nullable', 'numeric', 'min:0', 'max:99999'],
+            'iot_battery_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
         ]);
 
         $booking = $this->finishRideAndRefreshBooking($ride, $branch, $validated);
@@ -503,6 +505,7 @@ class RideFlowController extends Controller
             'ride_number' => ['nullable', 'string', 'max:50'],
             'iot_device_id' => ['nullable', 'string', 'max:100'],
             'iot_distance_km' => ['nullable', 'numeric', 'min:0', 'max:99999'],
+            'iot_battery_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'return_search' => ['nullable', 'string', 'max:255'],
             'return_booking' => ['nullable', 'integer'],
         ]);
@@ -545,7 +548,7 @@ class RideFlowController extends Controller
         return redirect()->route('ongoing', $redirectParams)->with('success', 'Ride completed successfully.');
     }
 
-    public function finishBooking(Booking $booking): RedirectResponse
+    public function finishBooking(Request $request, Booking $booking): RedirectResponse
     {
         $this->ensureUserLoggedIn();
         $this->ensureBookingBelongsToUserBranch($booking);
@@ -578,6 +581,7 @@ class RideFlowController extends Controller
                 'actual_minutes' => $actualMinutes,
                 'trip_distance_km' => $tripDistanceKm,
                 'average_speed_kph' => $this->calculateAverageSpeedKph($tripDistanceKm, $actualMinutes),
+                'complete_battery_percent' => $this->validatedBatteryPercent($request->input('iot_battery_percent')),
                 'charge' => $charge,
                 'status' => 'finished',
             ]);
@@ -935,6 +939,7 @@ class RideFlowController extends Controller
             'actual_minutes' => $actualMinutes,
             'trip_distance_km' => $tripDistanceKm,
             'average_speed_kph' => $this->calculateAverageSpeedKph($tripDistanceKm, $actualMinutes),
+            'complete_battery_percent' => $this->validatedBatteryPercent($input['iot_battery_percent'] ?? null),
             'charge' => $charge,
             'status' => 'finished',
         ]);
@@ -965,6 +970,15 @@ class RideFlowController extends Controller
         }
 
         return round($tripDistanceKm / ($actualMinutes / 60), 2);
+    }
+
+    protected function validatedBatteryPercent($value): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return min(100, max(0, (int) round((float) $value)));
     }
 
     protected function bookingReadyForPayment(Collection $rides): bool

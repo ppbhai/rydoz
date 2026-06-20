@@ -22,6 +22,8 @@ class BookingRide extends Model
         'actual_minutes',
         'trip_distance_km',
         'average_speed_kph',
+        'assign_battery_percent',
+        'complete_battery_percent',
         'charge',
         'discount_reason',
         'discount_amount',
@@ -37,6 +39,8 @@ class BookingRide extends Model
             'charge' => 'decimal:2',
             'trip_distance_km' => 'decimal:3',
             'average_speed_kph' => 'decimal:2',
+            'assign_battery_percent' => 'integer',
+            'complete_battery_percent' => 'integer',
             'discount_amount' => 'decimal:2',
             'final_charge' => 'decimal:2',
         ];
