@@ -11,7 +11,9 @@ import android.bluetooth.BluetoothProfile;
 import android.bluetooth.le.ScanCallback;
 import android.bluetooth.le.ScanResult;
 import android.bluetooth.le.ScanSettings;
+import android.app.Activity;
 import android.content.Context;
+import android.content.Intent;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -35,6 +37,7 @@ public class AndroidScooterBleBridge {
     private static final UUID CCCD_UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
     private static final int NEARBY_MANUFACTURER_ID = 0xFFFF;
     private static final int NEARBY_PROTOCOL_VERSION = 1;
+    private static final int REQUEST_ENABLE_BLUETOOTH = 7001;
 
     private final Context context;
     private final WebView webView;
@@ -63,6 +66,41 @@ public class AndroidScooterBleBridge {
     }
 
     @JavascriptInterface
+    @SuppressLint("MissingPermission")
+    public String isBluetoothEnabled(String json) {
+        boolean available = bluetoothAdapter != null;
+        boolean enabled = available && bluetoothAdapter.isEnabled();
+
+        return "{\"ok\":true,\"available\":" + (available ? "true" : "false")
+                + ",\"enabled\":" + (enabled ? "true" : "false") + "}";
+    }
+
+    @JavascriptInterface
+    @SuppressLint("MissingPermission")
+    public String requestBluetoothEnable(String json) {
+        if (bluetoothAdapter == null) {
+            emitStatus("Bluetooth adapter unavailable.");
+            return "{\"ok\":false,\"available\":false,\"enabled\":false}";
+        }
+
+        if (bluetoothAdapter.isEnabled()) {
+            return "{\"ok\":true,\"available\":true,\"enabled\":true,\"requested\":false}";
+        }
+
+        Intent intent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+
+        if (context instanceof Activity) {
+            ((Activity) context).startActivityForResult(intent, REQUEST_ENABLE_BLUETOOTH);
+        } else {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            context.startActivity(intent);
+        }
+
+        emitStatus("Bluetooth must be turned on to use the app.");
+        return "{\"ok\":true,\"available\":true,\"enabled\":false,\"requested\":true}";
+    }
+
+    @JavascriptInterface
     public String connect(String json) {
         try {
             JSONObject payload = new JSONObject(json);
@@ -81,6 +119,11 @@ public class AndroidScooterBleBridge {
             }
 
             pendingScooterId = scooterId;
+
+            if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled()) {
+                emitStatus("Turn on Bluetooth to continue.");
+                return "{\"ok\":false,\"error\":\"bluetooth_off\"}";
+            }
 
             if (!mac.isEmpty()) {
                 connectByMac(mac);
@@ -163,6 +206,11 @@ public class AndroidScooterBleBridge {
     private String startNearbyScanInternal() {
         nearbyScanRequested = true;
 
+        if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled()) {
+            emitNearbyScanStatus("Turn on Bluetooth to scan nearby scooters.");
+            return "{\"ok\":false,\"error\":\"bluetooth_off\"}";
+        }
+
         if (bluetoothAdapter == null || bluetoothAdapter.getBluetoothLeScanner() == null) {
             emitNearbyScanStatus("Bluetooth scanner unavailable.");
             return "{\"ok\":false,\"error\":\"scanner_unavailable\"}";
@@ -232,6 +280,11 @@ public class AndroidScooterBleBridge {
             return;
         }
 
+        if (!bluetoothAdapter.isEnabled()) {
+            emitStatus("Turn on Bluetooth to continue.");
+            return;
+        }
+
         try {
             pauseNearbyScan();
 
@@ -255,6 +308,11 @@ public class AndroidScooterBleBridge {
 
     @SuppressLint("MissingPermission")
     private void scanForScooter(String scooterId) {
+        if (bluetoothAdapter == null || !bluetoothAdapter.isEnabled()) {
+            emitStatus("Turn on Bluetooth to continue.");
+            return;
+        }
+
         if (bluetoothAdapter == null || bluetoothAdapter.getBluetoothLeScanner() == null) {
             emitStatus("Bluetooth scanner unavailable.");
             return;

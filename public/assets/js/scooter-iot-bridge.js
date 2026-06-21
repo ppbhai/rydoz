@@ -17,6 +17,7 @@
     const latestTelemetryByScooter = new Map();
     let liveStatsTimer = null;
     let liveStatsReportTimeout = null;
+    let bluetoothEnablePrompted = false;
 
     function setStatus(form, message, state) {
         const status = form?.querySelector('[data-iot-status]');
@@ -155,7 +156,88 @@
         return result;
     }
 
+    async function isNativeBluetoothEnabled() {
+        if (!hasNativeBridge() || typeof window.ScooterBle.isBluetoothEnabled !== 'function') {
+            return true;
+        }
+
+        const result = safeJson(await nativeCall('isBluetoothEnabled'));
+
+        return result.available !== false && result.enabled === true;
+    }
+
+    async function requestNativeBluetoothEnable() {
+        if (!hasNativeBridge() || typeof window.ScooterBle.requestBluetoothEnable !== 'function') {
+            return;
+        }
+
+        await nativeCall('requestBluetoothEnable');
+    }
+
+    function removeBluetoothGate() {
+        const gate = document.getElementById('iotBluetoothGate');
+
+        if (!gate) {
+            return;
+        }
+
+        gate.remove();
+        window.dispatchEvent(new Event('scooter:bluetooth-enabled'));
+    }
+
+    function showBluetoothGate() {
+        if (document.getElementById('iotBluetoothGate')) {
+            return;
+        }
+
+        const gate = document.createElement('div');
+        gate.id = 'iotBluetoothGate';
+        gate.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(10,16,24,.92);color:#fff;text-align:center;';
+        gate.innerHTML = `
+            <div style="max-width:360px;width:100%;background:#fff;color:#101828;border-radius:14px;padding:24px;box-shadow:0 24px 60px rgba(0,0,0,.28);">
+                <div style="width:48px;height:48px;border-radius:50%;margin:0 auto 16px;background:#e8f1ff;color:#0d6efd;display:flex;align-items:center;justify-content:center;font-size:24px;">
+                    <i class="fas fa-bluetooth-b"></i>
+                </div>
+                <h2 style="font-size:20px;line-height:1.3;margin:0 0 8px;font-weight:700;">Turn on Bluetooth</h2>
+                <p style="font-size:14px;line-height:1.5;margin:0 0 18px;color:#667085;">Bluetooth is required before using this app.</p>
+                <button type="button" data-bluetooth-enable style="width:100%;border:0;border-radius:10px;background:#0d6efd;color:#fff;padding:12px 14px;font-weight:700;">Turn On Bluetooth</button>
+            </div>
+        `;
+
+        gate.querySelector('[data-bluetooth-enable]')?.addEventListener('click', () => {
+            requestNativeBluetoothEnable().catch(() => {});
+        });
+
+        document.body.appendChild(gate);
+    }
+
+    async function enforceNativeBluetoothEnabled(promptToEnable = false) {
+        if (!hasNativeBridge()) {
+            return true;
+        }
+
+        const enabled = await isNativeBluetoothEnabled();
+
+        if (enabled) {
+            removeBluetoothGate();
+            return true;
+        }
+
+        showBluetoothGate();
+
+        if (promptToEnable && !bluetoothEnablePrompted) {
+            bluetoothEnablePrompted = true;
+            await requestNativeBluetoothEnable().catch(() => {});
+        }
+
+        return false;
+    }
+
     async function connectNative(scooterId, mac) {
+        if (!await enforceNativeBluetoothEnabled(true)) {
+            throw new Error('Turn on Bluetooth to continue.');
+        }
+
         const connected = waitForWindowEvent(
             'scooter:ble-connected',
             (event) => (event.detail?.scooterId || scooterId) === scooterId,
@@ -415,6 +497,13 @@
             return;
         }
 
+        if (!await enforceNativeBluetoothEnabled(true)) {
+            if (empty) {
+                empty.textContent = 'Turn on Bluetooth to scan nearby scooters.';
+            }
+            return;
+        }
+
         await nativeCall('startNearbyScan');
     }
 
@@ -465,19 +554,27 @@
             return;
         }
 
-        nativeCall('startNearbyScan').catch((error) => {
-            console.warn('Live scooter scan could not start.', error);
-        });
+        enforceNativeBluetoothEnabled()
+            .then((enabled) => {
+                if (!enabled) {
+                    return;
+                }
 
-        liveStatsTimer = window.setInterval(() => {
-            reportLiveStats().catch((error) => {
-                console.warn('Live scooter stats could not be reported.', error);
-            });
-        }, LIVE_STATS_INTERVAL_MS);
+                nativeCall('startNearbyScan').catch((error) => {
+                    console.warn('Live scooter scan could not start.', error);
+                });
 
-        window.setTimeout(() => {
-            reportLiveStats().catch(() => {});
-        }, 8000);
+                liveStatsTimer = window.setInterval(() => {
+                    reportLiveStats().catch((error) => {
+                        console.warn('Live scooter stats could not be reported.', error);
+                    });
+                }, LIVE_STATS_INTERVAL_MS);
+
+                window.setTimeout(() => {
+                    reportLiveStats().catch(() => {});
+                }, 8000);
+            })
+            .catch(() => {});
     }
 
     async function connect(scooterId, form) {
@@ -632,6 +729,16 @@
     }
 
     document.addEventListener('DOMContentLoaded', () => {
+        enforceNativeBluetoothEnabled(true).catch(() => {});
+        window.setInterval(() => {
+            enforceNativeBluetoothEnabled().catch(() => {});
+        }, 1500);
+
+        window.addEventListener('scooter:bluetooth-enabled', () => {
+            startNearbyScan().catch(() => {});
+            startLiveStatsReporting();
+        });
+
         document.querySelectorAll('[data-iot-scan]').forEach((button) => {
             button.addEventListener('click', () => {
                 scanOrConnect(button).catch((error) => {
