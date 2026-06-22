@@ -32,6 +32,7 @@ const float DIVIDER_R_BOTTOM = 10000.0f;
 const float DIVIDER_RATIO = (DIVIDER_R_TOP + DIVIDER_R_BOTTOM) / DIVIDER_R_BOTTOM;
 const uint32_t SCOOTER_ON_SENSE_GRACE_MS = 5000;
 const uint32_t SCOOTER_ON_SENSE_OFF_DEBOUNCE_MS = 1000;
+const bool USE_POWER_RELAY_CONTROL = true; // GPIO26 controls the MOSFET on the display/controller ground line.
 
 volatile uint32_t hallPulses = 0;
 volatile uint32_t lastHallMicros = 0;
@@ -156,11 +157,49 @@ void pressPowerButton()
     digitalWrite(BUTTON_OPTO_PIN, LOW);
 }
 
+bool scooterOutputIsOn()
+{
+    return digitalRead(SCOOTER_ON_SENSE_PIN) == HIGH;
+}
+
+bool scooterOutputIsOnStable()
+{
+    uint8_t highCount = 0;
+
+    for (int i = 0; i < 5; i++) {
+        if (scooterOutputIsOn()) {
+            highCount++;
+        }
+
+        delay(20);
+    }
+
+    return highCount >= 3;
+}
+
 void scooterOn()
 {
-    digitalWrite(ESP_POWER_HOLD_PIN, HIGH);
-    digitalWrite(POWER_RELAY_PIN, HIGH);
+    if (USE_POWER_RELAY_CONTROL && rideActive && scooterOutputWasOn) {
+        Serial.println("START ignored: MOSFET output already ON for active ride.");
+        return;
+    }
+
+    if (scooterOutputIsOnStable()) {
+        Serial.println("START ignored: scooter ON sense is already HIGH.");
+        rideActive = true;
+        scooterOutputWasOn = true;
+        scooterSenseConfirmedOn = true;
+        return;
+    }
+
+    if (USE_POWER_RELAY_CONTROL) {
+        digitalWrite(ESP_POWER_HOLD_PIN, HIGH);
+        digitalWrite(POWER_RELAY_PIN, HIGH);
+        delay(300);
+    }
+
     pressPowerButton();
+
     rideActive = true;
     scooterOutputWasOn = true;
     scooterSenseConfirmedOn = false;
@@ -169,12 +208,12 @@ void scooterOn()
     scooterSenseLowSinceMs = 0;
     lastScooterSenseDebugMs = 0;
 
-    Serial.println("Ride START: timer reset, waiting for scooter ON sense HIGH.");
-}
-
-bool scooterOutputIsOn()
-{
-    return digitalRead(SCOOTER_ON_SENSE_PIN) == HIGH;
+    if (scooterOutputIsOnStable()) {
+        scooterSenseConfirmedOn = true;
+        Serial.println("START completed: button pressed and scooter ON sense is HIGH.");
+    } else {
+        Serial.println("START command sent: button pressed, but scooter ON sense is still LOW.");
+    }
 }
 
 uint32_t scooterOnSeconds()
@@ -249,14 +288,35 @@ void updateScooterOutputState()
 void scooterOff()
 {
     captureScooterOnSeconds();
+
+    if (USE_POWER_RELAY_CONTROL) {
+        digitalWrite(POWER_RELAY_PIN, LOW);
+        rideActive = false;
+        scooterOutputWasOn = false;
+        scooterSenseConfirmedOn = false;
+
+        Serial.printf(
+            "STOP completed: MOSFET output OFF, stored actual on time=%lu seconds\n",
+            (unsigned long)actualScooterOnSeconds);
+        return;
+    }
+
+    if (!scooterOutputIsOnStable()) {
+        Serial.println("STOP ignored: scooter ON sense is already LOW.");
+        rideActive = false;
+        scooterOutputWasOn = false;
+        scooterSenseConfirmedOn = false;
+        return;
+    }
+
     pressPowerButton();
-    digitalWrite(POWER_RELAY_PIN, LOW);
+
     rideActive = false;
     scooterOutputWasOn = false;
     scooterSenseConfirmedOn = false;
 
     Serial.printf(
-        "STOP command completed, stored actual on time=%lu seconds\n",
+        "STOP completed: button pressed, stored actual on time=%lu seconds\n",
         (unsigned long)actualScooterOnSeconds);
 }
 
