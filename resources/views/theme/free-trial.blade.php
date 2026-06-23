@@ -79,7 +79,7 @@
             }
 
             function scooterIsOn() {
-                return latestTelemetry?.active === true || latestTelemetry?.scooterOutputOn === true || latestTelemetry?.freeTrialActive === true;
+                return latestTelemetry?.active === true || latestTelemetry?.scooterOutputOn === true;
             }
 
             function renderButtons() {
@@ -176,8 +176,6 @@
                         ...(latestTelemetry || {}),
                         active: false,
                         scooterOutputOn: false,
-                        freeTrialActive: false,
-                        freeTrialStopReason: 'manual',
                     };
                     trialActive = false;
                     setStatus(reason, 'connected');
@@ -198,11 +196,7 @@
                     return;
                 }
 
-                if (latestTelemetry?.freeTrialActive === false && latestTelemetry?.freeTrialStopReason) {
-                    trialActive = false;
-                    setStatus(`Free trial stopped by ESP: ${latestTelemetry.freeTrialStopReason}.`, 'connected');
-                    renderButtons();
-                }
+                renderButtons();
             }
 
             function resetForInputChange() {
@@ -259,19 +253,7 @@
                     }
                 }
 
-                if (data.freeTrialActive === true) {
-                    trialActive = true;
-                } else if (data.freeTrialActive === false) {
-                    trialActive = false;
-                }
-
                 if (scooterId && !trialActive) {
-                    if (data.freeTrialActive === false && data.freeTrialStopReason && data.freeTrialStopReason !== 'none') {
-                        setStatus(`Free trial stopped by ESP: ${data.freeTrialStopReason}.`, 'connected');
-                        renderButtons();
-                        return;
-                    }
-
                     setStatus(
                         scooterIsOn() ? 'Scooter is ON. Complete button is ready.' : 'Scooter is OFF. Assign free trial when ready.',
                         'connected'

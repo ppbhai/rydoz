@@ -446,20 +446,11 @@ void sendTelemetry()
     updateScooterOutputState();
     uint32_t elapsed = scooterOnSeconds();
 
-    uint32_t freeTrialSeconds = 0;
-    uint16_t freeTrialMeters = 0;
-
-    if (freeTrialStartMs > 0) {
-        freeTrialSeconds = (millis() - freeTrialStartMs) / 1000UL;
-        freeTrialMeters = (uint16_t)roundf(freeTrialDistanceKm() * 1000.0f);
-    }
-
-    char payload[420];
+    char payload[320];
     snprintf(payload, sizeof(payload),
         "{\"id\":\"%s\",\"active\":%s,\"km\":%.3f,\"speed\":%.1f,\"battery\":%u,\"voltage\":%.2f,"
         "\"seconds\":%lu,\"onSeconds\":%lu,\"off_after_seconds\":%lu,\"actual_scooter_on_seconds\":%lu,"
-        "\"scooterOutputOn\":%s,\"scooterSenseHigh\":%s,\"scooterSenseConfirmedOn\":%s,"
-        "\"freeTrialActive\":%s,\"freeTrialSeconds\":%lu,\"freeTrialMeters\":%u,\"freeTrialStopReason\":\"%s\"}",
+        "\"scooterOutputOn\":%s,\"scooterSenseHigh\":%s,\"scooterSenseConfirmedOn\":%s}",
         SCOOTER_ID,
         (rideActive && scooterOutputWasOn) ? "true" : "false",
         km,
@@ -472,11 +463,7 @@ void sendTelemetry()
         (unsigned long)elapsed,
         scooterOutputWasOn ? "true" : "false",
         scooterOutputIsOn() ? "true" : "false",
-        scooterSenseConfirmedOn ? "true" : "false",
-        freeTrialActive ? "true" : "false",
-        (unsigned long)freeTrialSeconds,
-        freeTrialMeters,
-        freeTrialStopReason);
+        scooterSenseConfirmedOn ? "true" : "false");
 
     telemetryCharacteristic->setValue((uint8_t *)payload, strlen(payload));
     telemetryCharacteristic->notify();

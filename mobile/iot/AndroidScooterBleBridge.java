@@ -38,6 +38,7 @@ public class AndroidScooterBleBridge {
     private static final int NEARBY_MANUFACTURER_ID = 0xFFFF;
     private static final int NEARBY_PROTOCOL_VERSION = 1;
     private static final int REQUEST_ENABLE_BLUETOOTH = 7001;
+    private static final int COMMAND_WRITE_RETRY_MS = 250;
 
     private final Context context;
     private final WebView webView;
@@ -150,8 +151,8 @@ public class AndroidScooterBleBridge {
                 return "{\"ok\":true,\"queued\":true}";
             }
 
-            writeCommand(command);
-            return "{\"ok\":true}";
+            boolean started = writeCommand(command);
+            return "{\"ok\":" + (started ? "true" : "false") + "}";
         } catch (JSONException error) {
             return "{\"ok\":false,\"error\":\"invalid_json\"}";
         }
@@ -594,7 +595,28 @@ public class AndroidScooterBleBridge {
     }
 
     @SuppressLint("MissingPermission")
-    private void writeCommand(String command) {
+    private boolean writeCommand(String command) {
+        if (commandCharacteristic == null || gatt == null) {
+            pendingCommand = command;
+            return true;
+        }
+
+        commandCharacteristic.setWriteType(BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT);
+        commandCharacteristic.setValue((command + "\n").getBytes(StandardCharsets.UTF_8));
+        lastWrittenCommand = command;
+
+        boolean started = gatt.writeCharacteristic(commandCharacteristic);
+
+        if (!started) {
+            emitStatus("Command write could not start: " + command);
+            mainHandler.postDelayed(() -> retryCommandWrite(command), COMMAND_WRITE_RETRY_MS);
+        }
+
+        return started;
+    }
+
+    @SuppressLint("MissingPermission")
+    private void retryCommandWrite(String command) {
         if (commandCharacteristic == null || gatt == null) {
             pendingCommand = command;
             return;
@@ -607,7 +629,8 @@ public class AndroidScooterBleBridge {
         boolean started = gatt.writeCharacteristic(commandCharacteristic);
 
         if (!started) {
-            emitStatus("Command write could not start: " + command);
+            pendingCommand = command;
+            emitStatus("Command write retry queued: " + command);
         }
     }
 

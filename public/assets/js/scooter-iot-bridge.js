@@ -601,7 +601,7 @@
             await connectWebBluetooth(normalizedId);
         }
 
-        const telemetry = await refreshTelemetry(form, normalizedId);
+        const telemetry = await refreshTelemetry(form, normalizedId).catch(() => null);
         setStatus(form, formatConnectedMessage(normalizedId, telemetry), 'connected');
         markFormConnected(form, normalizedId);
         return normalizedId;
@@ -690,17 +690,19 @@
             const scooterId = await connect(input.value, form);
             input.value = scooterId || preparedScooterId;
             syncVehicleNumberFromIotInput(input);
-            if (command === 'START') {
-                await ensureAssignableBattery(form, scooterId);
-            }
             setStatus(form, command === 'START' ? 'Powering scooter on...' : 'Powering scooter off...', 'pending');
             if (command === 'START') {
+                await wait(650);
                 await sendCommand('RESET_KM', form);
                 await wait(250);
             }
             await sendCommand(command, form);
             setStatus(form, command === 'START' ? 'Scooter powered on' : 'Scooter powered off', 'connected');
-            if (command === 'STOP') {
+            if (command === 'START') {
+                await wait(1200);
+                const telemetry = await refreshTelemetry(form, scooterId).catch(() => null);
+                setBatteryInput(form, telemetryBattery(telemetry));
+            } else if (command === 'STOP') {
                 setStatus(form, 'Waiting for final KM...', 'pending');
                 await wait(4500);
                 const telemetry = await refreshTelemetry(form, scooterId);
@@ -715,8 +717,6 @@
                         : `Final KM not received${battery !== null ? ` | Battery ${battery}%` : ''}.`,
                     hasKm ? 'connected' : 'error'
                 );
-            } else {
-                await wait(1200);
             }
             await disconnectBluetooth();
             pendingSubmit = form;
