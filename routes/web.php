@@ -152,6 +152,9 @@ Route::post('/scooter-live-stats', [RideFlowController::class, 'updateScooterLiv
 Route::get('/scooter-usage', [RideFlowController::class, 'scooterUsage'])
     ->name('scooter.usage')
     ->middleware('desktop.redirect');
+Route::get('/free-trial', [RideFlowController::class, 'freeTrial'])
+    ->name('free-trial')
+    ->middleware('desktop.redirect');
 Route::get('/book', [RideFlowController::class, 'book'])->name('book')->middleware('desktop.redirect');
 Route::get('/booking-customer', [RideFlowController::class, 'customerLookup'])->name('booking-customer')->middleware('desktop.redirect');
 Route::post('/send-otp', [RideFlowController::class, 'sendOtp'])->name('send-otp');

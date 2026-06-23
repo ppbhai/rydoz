@@ -98,6 +98,16 @@ class RideFlowController extends Controller
         return view('theme.scooter-usage', compact('assignedScooters'));
     }
 
+    public function freeTrial()
+    {
+        $this->ensureUserLoggedIn();
+        $branch = $this->currentBranch();
+
+        abort_unless($branch && $branch->free_trial_enabled, 403);
+
+        return view('theme.free-trial');
+    }
+
     public function updateScooterLiveStats(Request $request): JsonResponse
     {
         $this->ensureUserLoggedIn();

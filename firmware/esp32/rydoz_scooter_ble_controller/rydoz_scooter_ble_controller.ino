@@ -9,6 +9,7 @@
 
 #include <Arduino.h>
 #include <NimBLEDevice.h>
+#include <string.h>
 
 #define SCOOTER_ID "SCOOTER001"
 
@@ -33,6 +34,9 @@ const float DIVIDER_RATIO = (DIVIDER_R_TOP + DIVIDER_R_BOTTOM) / DIVIDER_R_BOTTO
 const uint32_t SCOOTER_ON_SENSE_GRACE_MS = 5000;
 const uint32_t SCOOTER_ON_SENSE_OFF_DEBOUNCE_MS = 1000;
 const bool USE_POWER_RELAY_CONTROL = true; // GPIO26 controls the MOSFET on the display/controller ground line.
+const uint32_t FREE_TRIAL_LIMIT_MS = 60000;
+const uint32_t FREE_TRIAL_DISTANCE_GRACE_MS = 5000;
+const float FREE_TRIAL_LIMIT_KM = 0.100f;
 
 volatile uint32_t hallPulses = 0;
 volatile uint32_t lastHallMicros = 0;
@@ -52,6 +56,10 @@ uint32_t rideStartMs = 0;
 uint32_t actualScooterOnSeconds = 0;
 uint32_t lastPulseSnapshot = 0;
 float speedKph = 0.0f;
+bool freeTrialActive = false;
+uint32_t freeTrialStartMs = 0;
+uint32_t freeTrialStartPulses = 0;
+const char *freeTrialStopReason = "none";
 
 void IRAM_ATTR onHallPulse()
 {
@@ -150,6 +158,28 @@ float distanceKm()
     return (revolutions * WHEEL_CIRCUMFERENCE_M) / 1000.0f;
 }
 
+uint32_t hallPulseSnapshot()
+{
+    uint32_t pulses;
+    noInterrupts();
+    pulses = hallPulses;
+    interrupts();
+
+    return pulses;
+}
+
+float freeTrialDistanceKm()
+{
+    uint32_t pulses = hallPulseSnapshot();
+
+    if (pulses < freeTrialStartPulses) {
+        return 0.0f;
+    }
+
+    float revolutions = (pulses - freeTrialStartPulses) / (float)HALL_PULSES_PER_REV;
+    return (revolutions * WHEEL_CIRCUMFERENCE_M) / 1000.0f;
+}
+
 void pressPowerButton()
 {
     digitalWrite(BUTTON_OPTO_PIN, HIGH);
@@ -205,6 +235,10 @@ void scooterOn()
     scooterSenseConfirmedOn = false;
     rideStartMs = millis();
     actualScooterOnSeconds = 0;
+    freeTrialActive = false;
+    freeTrialStartMs = 0;
+    freeTrialStartPulses = 0;
+    freeTrialStopReason = "none";
     scooterSenseLowSinceMs = 0;
     lastScooterSenseDebugMs = 0;
 
@@ -214,6 +248,35 @@ void scooterOn()
     } else {
         Serial.println("START command sent: button pressed, but scooter ON sense is still LOW.");
     }
+}
+
+void startFreeTrial()
+{
+    if (rideActive && scooterOutputWasOn) {
+        Serial.println("START_TRIAL ignored: scooter already active.");
+        return;
+    }
+
+    scooterOn();
+
+    if (!rideActive || !scooterOutputWasOn) {
+        Serial.println("START_TRIAL failed: scooter output did not become active.");
+        return;
+    }
+
+    noInterrupts();
+    hallPulses = 0;
+    lastHallMicros = 0;
+    interrupts();
+
+    lastPulseSnapshot = 0;
+    speedKph = 0.0f;
+    freeTrialActive = true;
+    freeTrialStartMs = millis();
+    freeTrialStartPulses = 0;
+    freeTrialStopReason = "running";
+
+    Serial.println("START_TRIAL completed: ESP will auto stop after 60 seconds or 100 meters.");
 }
 
 uint32_t scooterOnSeconds()
@@ -289,6 +352,12 @@ void scooterOff()
 {
     captureScooterOnSeconds();
 
+    if (freeTrialActive && strcmp(freeTrialStopReason, "running") == 0) {
+        freeTrialStopReason = "manual";
+    }
+
+    freeTrialActive = false;
+
     if (USE_POWER_RELAY_CONTROL) {
         digitalWrite(POWER_RELAY_PIN, LOW);
         rideActive = false;
@@ -320,6 +389,35 @@ void scooterOff()
         (unsigned long)actualScooterOnSeconds);
 }
 
+void updateFreeTrialAutoStop()
+{
+    if (!freeTrialActive || !rideActive || !scooterOutputWasOn || freeTrialStartMs == 0) {
+        return;
+    }
+
+    const uint32_t trialElapsedMs = millis() - freeTrialStartMs;
+
+    if (millis() - freeTrialStartMs >= FREE_TRIAL_LIMIT_MS) {
+        freeTrialStopReason = "time";
+        Serial.println("FREE_TRIAL_AUTO_STOP: 60 seconds reached.");
+        scooterOff();
+        return;
+    }
+
+    if (trialElapsedMs < FREE_TRIAL_DISTANCE_GRACE_MS) {
+        return;
+    }
+
+    if (freeTrialDistanceKm() >= FREE_TRIAL_LIMIT_KM) {
+        freeTrialStopReason = "distance";
+        Serial.printf(
+            "FREE_TRIAL_AUTO_STOP: 100 meters reached. pulses=%lu meters=%u\n",
+            (unsigned long)hallPulseSnapshot(),
+            (unsigned int)roundf(freeTrialDistanceKm() * 1000.0f));
+        scooterOff();
+    }
+}
+
 void sendTelemetry()
 {
     if (!telemetryCharacteristic) {
@@ -348,11 +446,20 @@ void sendTelemetry()
     updateScooterOutputState();
     uint32_t elapsed = scooterOnSeconds();
 
-    char payload[320];
+    uint32_t freeTrialSeconds = 0;
+    uint16_t freeTrialMeters = 0;
+
+    if (freeTrialStartMs > 0) {
+        freeTrialSeconds = (millis() - freeTrialStartMs) / 1000UL;
+        freeTrialMeters = (uint16_t)roundf(freeTrialDistanceKm() * 1000.0f);
+    }
+
+    char payload[420];
     snprintf(payload, sizeof(payload),
         "{\"id\":\"%s\",\"active\":%s,\"km\":%.3f,\"speed\":%.1f,\"battery\":%u,\"voltage\":%.2f,"
         "\"seconds\":%lu,\"onSeconds\":%lu,\"off_after_seconds\":%lu,\"actual_scooter_on_seconds\":%lu,"
-        "\"scooterOutputOn\":%s,\"scooterSenseHigh\":%s,\"scooterSenseConfirmedOn\":%s}",
+        "\"scooterOutputOn\":%s,\"scooterSenseHigh\":%s,\"scooterSenseConfirmedOn\":%s,"
+        "\"freeTrialActive\":%s,\"freeTrialSeconds\":%lu,\"freeTrialMeters\":%u,\"freeTrialStopReason\":\"%s\"}",
         SCOOTER_ID,
         (rideActive && scooterOutputWasOn) ? "true" : "false",
         km,
@@ -365,7 +472,11 @@ void sendTelemetry()
         (unsigned long)elapsed,
         scooterOutputWasOn ? "true" : "false",
         scooterOutputIsOn() ? "true" : "false",
-        scooterSenseConfirmedOn ? "true" : "false");
+        scooterSenseConfirmedOn ? "true" : "false",
+        freeTrialActive ? "true" : "false",
+        (unsigned long)freeTrialSeconds,
+        freeTrialMeters,
+        freeTrialStopReason);
 
     telemetryCharacteristic->setValue((uint8_t *)payload, strlen(payload));
     telemetryCharacteristic->notify();
@@ -384,6 +495,8 @@ class CommandCallbacks : public NimBLECharacteristicCallbacks
 
         if (command == "START") {
             scooterOn();
+        } else if (command == "START_TRIAL") {
+            startFreeTrial();
         } else if (command == "STOP") {
             scooterOff();
         } else if (command == "RESET_KM") {
@@ -465,6 +578,8 @@ void setup()
 
 void loop()
 {
+    updateFreeTrialAutoStop();
+
     if (millis() - lastTelemetryMs >= 1000) {
         lastTelemetryMs = millis();
         sendTelemetry();

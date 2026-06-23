@@ -15,6 +15,7 @@ class Branch extends Model
         'scanner_enabled',
         'vehicle_number_required',
         'document_select_enabled',
+        'free_trial_enabled',
     ];
 
     protected function casts(): array
@@ -24,6 +25,7 @@ class Branch extends Model
             'scanner_enabled' => 'boolean',
             'vehicle_number_required' => 'boolean',
             'document_select_enabled' => 'boolean',
+            'free_trial_enabled' => 'boolean',
         ];
     }
 
