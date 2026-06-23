@@ -7,6 +7,9 @@
         'leftUrl' => route('scooter.batteries'),
         'leftIcon' => 'fas fa-battery-three-quarters',
         'leftLabel' => 'Scooter batteries',
+        'leftExtraUrl' => route('scooter.usage'),
+        'leftExtraIcon' => 'fas fa-gauge-high',
+        'leftExtraLabel' => 'Scooter usage',
         'rightUrl' => route('userlogout'),
         'rightIcon' => 'fas fa-right-from-bracket',
         'rightLabel' => 'Logout',
@@ -41,10 +44,6 @@
                 <a href="{{ route('bookings.completed') }}" class="metric-card"
                     style="min-height:40px; padding:10px 16px; align-items:center; justify-content:center; background:var(--brand); color:#fff; border-radius:999px;">
                     <div class="metric-value" style="color:#fff; font-size:1.2rem;">Completed Rides</div>
-                </a>
-                <a href="{{ route('scooter.usage') }}" class="metric-card"
-                    style="min-height:40px; padding:10px 16px; align-items:center; justify-content:center; background:var(--brand); color:#fff; border-radius:999px;">
-                    <div class="metric-value" style="color:#fff; font-size:1.2rem;">Scooter Usage</div>
                 </a>
                 @if ($branch->free_trial_enabled)
                     <a href="{{ route('free-trial') }}" class="metric-card"

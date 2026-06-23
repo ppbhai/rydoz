@@ -61,11 +61,21 @@
 
         .app-header-inner {
             display: grid;
-            grid-template-columns: 56px 1fr 56px;
+            grid-template-columns: minmax(88px, auto) 1fr minmax(88px, auto);
             align-items: center;
             gap: 8px;
             padding: 12px 20px;
             min-height: 64px;
+        }
+
+        .header-action-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .header-action-group.right {
+            justify-content: flex-end;
         }
 
         .header-action {
