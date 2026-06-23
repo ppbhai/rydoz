@@ -167,7 +167,7 @@ class LoginController extends Controller
                 return [
                     'scooter_name' => $scooterId,
                     'battery' => $battery,
-                    'status' => $ongoingRideNumbers->has($scooterId) ? 'ongoing' : 'onready',
+                    'status' => $ongoingRideNumbers->has($scooterId) ? 'ongoing' : 'available',
                     'assigned_24h_count' => (int) ($assignCountsLastDay[$scooterId] ?? 0),
                     'lifetime_km' => round((float) ($lifetimeKm[$scooterId] ?? 0), 3),
                 ];
