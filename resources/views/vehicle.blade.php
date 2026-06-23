@@ -29,6 +29,10 @@
                             <input type="text" class="form-control" name="name" required>
                         </div>
                         <div class="col-md-2">
+                            <label class="form-label">Quantity</label>
+                            <input type="number" class="form-control" name="quantity" min="1" value="1" required>
+                        </div>
+                        <div class="col-md-2">
                             <label class="form-label">Price</label>
                             <input type="number" class="form-control" step="0.01" name="price" min="0" required>
                         </div>
@@ -55,6 +59,7 @@
                                     <th>#</th>
                                     <th>Branch</th>
                                     <th>Vehicle</th>
+                                    <th>Quantity</th>
                                     <th>Price</th>
                                     <th>Time</th>
                                     <th>Action</th>
@@ -66,6 +71,7 @@
                                         <td>{{ $index + 1 }}</td>
                                         <td>{{ $vehicle->branch?->name }}</td>
                                         <td>{{ $vehicle->name }}</td>
+                                        <td>{{ number_format($vehicle->quantity) }}</td>
                                         <td>{{ $vehicle->price }}</td>
                                         <td>{{ $vehicle->time }} min</td>
                                         <td>

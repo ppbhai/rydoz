@@ -11,6 +11,7 @@ class BranchVehicle extends Model
     protected $fillable = [
         'branch_id',
         'name',
+        'quantity',
         'price',
         'time',
     ];
@@ -18,6 +19,7 @@ class BranchVehicle extends Model
     protected function casts(): array
     {
         return [
+            'quantity' => 'integer',
             'price' => 'decimal:2',
         ];
     }

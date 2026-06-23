@@ -21,6 +21,7 @@ const uint8_t POWER_RELAY_PIN = 26;      // drives relay/MOSFET gate driver inpu
 const uint8_t BUTTON_OPTO_PIN = 27;      // PC817 LED drive to simulate 3-second button press
 const uint8_t HALL_PIN = 25;             // hall sensor pulse input
 const uint8_t BATTERY_ADC_PIN = 34;      // ADC-only pin for 36V divider
+const uint8_t CHARGER_SENSE_PIN = 35;    // HIGH when charger input voltage is present through divider
 const uint8_t ESP_POWER_HOLD_PIN = 32;   // optional latch/enable line for IoT power switch
 const uint8_t SCOOTER_ON_SENSE_PIN = 33; // feed 3.3V HIGH only while scooter/controller output is actually ON
 
@@ -103,6 +104,11 @@ uint8_t voltageToPercent(float voltage)
     return (uint8_t)roundf(((voltage - emptyV) / (fullV - emptyV)) * 100.0f);
 }
 
+bool chargerIsConnected()
+{
+    return digitalRead(CHARGER_SENSE_PIN) == HIGH;
+}
+
 void updateNearbyAdvertisement()
 {
     if (!bleAdvertising || bleClientConnected) {
@@ -111,9 +117,10 @@ void updateNearbyAdvertisement()
 
     const float voltage = readScooterVoltage();
     const uint8_t batteryPercent = voltageToPercent(voltage);
+    const bool charging = chargerIsConnected();
     const String deviceName = "RYDOZ-" + String(SCOOTER_ID);
     const size_t scooterIdLength = strlen(SCOOTER_ID);
-    uint8_t manufacturerData[4 + scooterIdLength];
+    uint8_t manufacturerData[5 + scooterIdLength];
     NimBLEAdvertisementData advertisementData;
     NimBLEAdvertisementData scanResponseData;
 
@@ -123,7 +130,8 @@ void updateNearbyAdvertisement()
     manufacturerData[1] = 0xFF;
     manufacturerData[2] = 0x01;
     manufacturerData[3] = batteryPercent;
-    memcpy(manufacturerData + 4, SCOOTER_ID, scooterIdLength);
+    manufacturerData[4] = charging ? 1 : 0;
+    memcpy(manufacturerData + 5, SCOOTER_ID, scooterIdLength);
 
     // Keep advertisement data compact. A 128-bit service UUID plus battery
     // manufacturer data can exceed the legacy 31-byte BLE packet limit.
@@ -140,9 +148,10 @@ void updateNearbyAdvertisement()
     }
 
     Serial.printf(
-        "Nearby advertisement: id=%s battery=%u%% set=%s refresh=%s\n",
+        "Nearby advertisement: id=%s battery=%u%% charging=%s set=%s refresh=%s\n",
         SCOOTER_ID,
         batteryPercent,
+        charging ? "yes" : "no",
         dataSet ? "ok" : "failed",
         dataRefreshed ? "ok" : "failed");
 }
@@ -442,6 +451,7 @@ void sendTelemetry()
 
     float voltage = readScooterVoltage();
     uint8_t batteryPercent = voltageToPercent(voltage);
+    bool charging = chargerIsConnected();
     float km = distanceKm();
     updateScooterOutputState();
     uint32_t elapsed = scooterOnSeconds();
@@ -450,7 +460,7 @@ void sendTelemetry()
     snprintf(payload, sizeof(payload),
         "{\"id\":\"%s\",\"active\":%s,\"km\":%.3f,\"speed\":%.1f,\"battery\":%u,\"voltage\":%.2f,"
         "\"seconds\":%lu,\"onSeconds\":%lu,\"off_after_seconds\":%lu,\"actual_scooter_on_seconds\":%lu,"
-        "\"scooterOutputOn\":%s,\"scooterSenseHigh\":%s,\"scooterSenseConfirmedOn\":%s}",
+        "\"scooterOutputOn\":%s,\"scooterSenseHigh\":%s,\"scooterSenseConfirmedOn\":%s,\"charging\":%s}",
         SCOOTER_ID,
         (rideActive && scooterOutputWasOn) ? "true" : "false",
         km,
@@ -463,7 +473,8 @@ void sendTelemetry()
         (unsigned long)elapsed,
         scooterOutputWasOn ? "true" : "false",
         scooterOutputIsOn() ? "true" : "false",
-        scooterSenseConfirmedOn ? "true" : "false");
+        scooterSenseConfirmedOn ? "true" : "false",
+        charging ? "true" : "false");
 
     telemetryCharacteristic->setValue((uint8_t *)payload, strlen(payload));
     telemetryCharacteristic->notify();
@@ -550,6 +561,7 @@ void setup()
     pinMode(BUTTON_OPTO_PIN, OUTPUT);
     pinMode(ESP_POWER_HOLD_PIN, OUTPUT);
     pinMode(HALL_PIN, INPUT_PULLUP);
+    pinMode(CHARGER_SENSE_PIN, INPUT);
     pinMode(SCOOTER_ON_SENSE_PIN, INPUT_PULLDOWN);
 
     digitalWrite(POWER_RELAY_PIN, LOW);

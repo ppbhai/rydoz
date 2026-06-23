@@ -81,7 +81,7 @@
                                 </button>
                                 <div class="mt-2 d-none" data-qty-wrap>
                                     <select class="form-select form-select-sm" data-qty-select>
-                                        @for ($qty = 1; $qty <= 9; $qty++)
+                                        @for ($qty = 1; $qty <= max(1, (int) $vehicle->quantity); $qty++)
                                             <option value="{{ $qty }}" @selected($qty === 1)>
                                                 {{ $qty }}</option>
                                         @endfor

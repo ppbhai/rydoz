@@ -50,6 +50,7 @@ class VehicleController extends Controller
         $validated = $request->validate([
             'branch_id' => ['required', 'exists:branches,id'],
             'name' => ['required', 'string', 'max:255'],
+            'quantity' => ['required', 'integer', 'min:1'],
             'price' => ['required', 'numeric', 'min:0'],
             'time' => ['required', 'integer', 'min:1'],
         ]);

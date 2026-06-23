@@ -423,8 +423,11 @@ public class AndroidScooterBleBridge {
 
         if (payload != null && payload.length >= 3 && (payload[0] & 0xFF) == NEARBY_PROTOCOL_VERSION) {
             int battery = payload[1] & 0xFF;
+            boolean hasChargingFlag = payload.length >= 4 && ((payload[2] & 0xFF) == 0 || (payload[2] & 0xFF) == 1);
+            boolean charging = hasChargingFlag && (payload[2] & 0xFF) == 1;
+            int scooterIdOffset = hasChargingFlag ? 3 : 2;
             String scooterId = new String(
-                    Arrays.copyOfRange(payload, 2, payload.length),
+                    Arrays.copyOfRange(payload, scooterIdOffset, payload.length),
                     StandardCharsets.UTF_8
             ).trim();
 
@@ -435,7 +438,7 @@ public class AndroidScooterBleBridge {
 
             nearbyScooterCount++;
             emitNearbyScanStatus("Found " + scooterId + " at " + battery + "%.");
-            emitNearbyScooter(scooterId, battery, result.getRssi(), result.getDevice().getAddress());
+            emitNearbyScooter(scooterId, battery, charging, result.getRssi(), result.getDevice().getAddress());
             return;
         }
 
@@ -443,6 +446,7 @@ public class AndroidScooterBleBridge {
 
         if (serviceTelemetry != null && serviceTelemetry.has("battery")) {
             int battery = serviceTelemetry.optInt("battery", -1);
+            boolean charging = serviceTelemetry.optBoolean("charging", serviceTelemetry.optBoolean("chg", false));
             String scooterId = serviceTelemetry.optString("id", "").trim();
 
             if (scooterId.isEmpty() && advertisedName != null && advertisedName.startsWith("RYDOZ-")) {
@@ -452,7 +456,7 @@ public class AndroidScooterBleBridge {
             if (!scooterId.isEmpty() && battery >= 0 && battery <= 100) {
                 nearbyScooterCount++;
                 emitNearbyScanStatus("Found " + scooterId + " at " + battery + "%.");
-                emitNearbyScooter(scooterId, battery, result.getRssi(), result.getDevice().getAddress());
+                emitNearbyScooter(scooterId, battery, charging, result.getRssi(), result.getDevice().getAddress());
                 return;
             }
         }
@@ -647,11 +651,12 @@ public class AndroidScooterBleBridge {
         emitJs("window.dispatchEvent(new CustomEvent('scooter:telemetry',{detail:" + json + "}))");
     }
 
-    private void emitNearbyScooter(String scooterId, int battery, int rssi, String mac) {
+    private void emitNearbyScooter(String scooterId, int battery, boolean charging, int rssi, String mac) {
         emitJs(
                 "window.dispatchEvent(new CustomEvent('scooter:nearby-telemetry',{detail:{"
                         + "scooterId:" + JSONObject.quote(scooterId)
                         + ",battery:" + battery
+                        + ",charging:" + (charging ? "true" : "false")
                         + ",rssi:" + rssi
                         + ",mac:" + JSONObject.quote(mac)
                         + "}}))"

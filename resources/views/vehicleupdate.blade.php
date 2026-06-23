@@ -24,6 +24,10 @@
                             <input type="text" class="form-control" name="name" value="{{ $vehicle->name }}" required>
                         </div>
                         <div class="col-md-2">
+                            <label class="form-label">Quantity</label>
+                            <input type="number" class="form-control" name="quantity" min="1" value="{{ $vehicle->quantity }}" required>
+                        </div>
+                        <div class="col-md-2">
                             <label class="form-label">Price</label>
                             <input type="number" class="form-control" step="0.01" name="price" min="0" value="{{ $vehicle->price }}" required>
                         </div>

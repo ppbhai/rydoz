@@ -29,11 +29,17 @@
                 <div class="nearby-scooter-list" data-assigned-scooter-list>
                     @forelse ($assignedScooters as $scooter)
                         <div class="nearby-scooter-row" data-assigned-scooter-row
-                            data-search-text="{{ strtolower($scooter->ride_number) }}">
+                            data-search-text="{{ strtolower($scooter->ride_number . ' ' . $scooter->usage_status) }}">
                             <strong>{{ $scooter->ride_number }}</strong>
-                            <span class="nearby-scooter-battery" data-level="good">
-                                {{ $scooter->assign_count }}
-                            </span>
+                            <div class="d-flex align-items-center gap-5">
+                                <span class="nearby-scooter-battery" data-level="good">
+                                    {{ $scooter->assign_count }} 
+                                </span>
+                                <span class="nearby-scooter-battery"
+                                    data-level="{{ $scooter->usage_status === 'ongoing' ? 'medium' : 'good' }}">
+                                    {{ ucfirst($scooter->usage_status) }}
+                                </span>
+                            </div>
                         </div>
                     @empty
                         <div class="nearby-scooter-empty">

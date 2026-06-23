@@ -95,6 +95,19 @@ class RideFlowController extends Controller
             ->orderBy('ride_number')
             ->get();
 
+        $ongoingScooters = BookingRide::query()
+            ->where('status', 'ongoing')
+            ->whereNotNull('ride_number')
+            ->where('ride_number', '!=', '')
+            ->whereHas('booking', fn ($query) => $query->where('branch_id', $branch->id))
+            ->pluck('ride_number')
+            ->unique()
+            ->flip();
+
+        $assignedScooters->each(function ($scooter) use ($ongoingScooters) {
+            $scooter->usage_status = $ongoingScooters->has($scooter->ride_number) ? 'ongoing' : 'available';
+        });
+
         return view('theme.scooter-usage', compact('assignedScooters'));
     }
 
@@ -125,6 +138,7 @@ class RideFlowController extends Controller
             'scooters' => ['nullable', 'array'],
             'scooters.*.scooterId' => ['required_with:scooters', 'string', 'max:100'],
             'scooters.*.battery' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'scooters.*.charging' => ['nullable', 'boolean'],
         ]);
 
         $scooters = collect($validated['scooters'] ?? [])
@@ -134,6 +148,7 @@ class RideFlowController extends Controller
                     'battery' => array_key_exists('battery', $scooter) && $scooter['battery'] !== null
                         ? min(100, max(0, (int) round((float) $scooter['battery'])))
                         : null,
+                    'charging' => (bool) ($scooter['charging'] ?? false),
                 ];
             })
             ->filter(fn (array $scooter) => $scooter['scooterId'] !== '')
@@ -314,6 +329,8 @@ class RideFlowController extends Controller
             if (!$branchVehicle) {
                 continue;
             }
+
+            $requestedQty = min($requestedQty, max(1, (int) $branchVehicle->quantity));
 
             for ($i = 0; $i < $requestedQty; $i++) {
                 $booking->rides()->create([
@@ -949,7 +966,7 @@ class RideFlowController extends Controller
             ->orderBy('name')
             ->get()
             ->map(function (BranchVehicle $vehicle) {
-                $vehicle->available_quantity = 1;
+                $vehicle->available_quantity = max(1, (int) $vehicle->quantity);
 
                 return $vehicle;
             });

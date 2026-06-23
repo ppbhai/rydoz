@@ -48,10 +48,11 @@ class LoginController extends Controller
         $totalDeals = Booking::where('status', 'completed')->count();
         $totalRevenue = (float) Booking::where('status', 'completed')->sum('final_amount');
         $totalBranches = Branch::count();
-        $totalVehicles = class_exists(BranchVehicle::class) ? BranchVehicle::count() : Vehicle::count();
+        $totalVehicles = class_exists(BranchVehicle::class) ? (int) BranchVehicle::sum('quantity') : Vehicle::count();
         $branches = Branch::orderBy('name')->get();
         $selectedBranchId = (int) request('branch_id', $branches->first()?->id ?? 0);
-        $liveDashboardStats = $this->liveDashboardStats($selectedBranchId);
+        $selectedVehicleId = (int) request('vehicle_id', 0);
+        $liveDashboardStats = $this->liveDashboardStats($selectedBranchId, $selectedVehicleId);
 
         return view('index', compact(
             'totalCustomers',
@@ -62,6 +63,7 @@ class LoginController extends Controller
             'totalBranches',
             'branches',
             'selectedBranchId',
+            'selectedVehicleId',
             'liveDashboardStats'
         ));
     }
@@ -69,14 +71,15 @@ class LoginController extends Controller
     public function liveStats(Request $request)
     {
         $branchId = (int) $request->query('branch_id');
+        $vehicleId = (int) $request->query('vehicle_id');
 
         return response()->json([
             'status' => true,
-            'stats' => $this->liveDashboardStats($branchId),
+            'stats' => $this->liveDashboardStats($branchId, $vehicleId),
         ]);
     }
 
-    protected function liveDashboardStats(int $branchId): array
+    protected function liveDashboardStats(int $branchId, int $vehicleId = 0): array
     {
         $branch = Branch::find($branchId) ?: Branch::orderBy('name')->first();
 
@@ -86,34 +89,63 @@ class LoginController extends Controller
                 'total_scooters' => 0,
                 'ongoing_rides' => 0,
                 'available_scooters' => 0,
+                'offline_scooters' => 0,
                 'online_scooters' => 0,
                 'low_battery_scooters' => 0,
                 'reported_at' => null,
                 'scooters' => [],
+                'vehicles' => [],
+                'vehicle_id' => null,
             ];
         }
 
-        $totalScooters = BranchVehicle::where('branch_id', $branch->id)->count();
+        $vehicles = BranchVehicle::query()
+            ->where('branch_id', $branch->id)
+            ->orderBy('name')
+            ->get(['id', 'name', 'quantity']);
+        $selectedVehicle = $vehicles->firstWhere('id', $vehicleId);
+        $selectedVehicleId = $selectedVehicle?->id;
+        $totalScooters = $selectedVehicle
+            ? max(1, (int) $selectedVehicle->quantity)
+            : (int) $vehicles->sum(fn (BranchVehicle $vehicle) => max(1, (int) $vehicle->quantity));
         $ongoingRides = BookingRide::where('status', 'ongoing')
             ->whereHas('booking', fn ($query) => $query->where('branch_id', $branch->id))
+            ->when($selectedVehicleId, fn ($query) => $query->where('branch_vehicle_id', $selectedVehicleId))
             ->count();
         $liveStat = BranchLiveStat::where('branch_id', $branch->id)->first();
         $hasFreshLiveStat = $liveStat?->reported_at && $liveStat->reported_at->greaterThanOrEqualTo(now()->subMinutes(2));
         $liveScooters = $hasFreshLiveStat ? collect($liveStat->scooters ?: []) : collect();
+        $scooters = $this->liveDashboardScooters($branch->id, $liveScooters, $selectedVehicleId);
+        $onlineScooters = $selectedVehicleId
+            ? collect($scooters)->where('is_online', true)->count()
+            : ($hasFreshLiveStat ? (int) $liveStat->online_scooters : 0);
+        $lowBatteryScooters = $selectedVehicleId
+            ? collect($scooters)->filter(fn (array $scooter) => $scooter['battery'] !== null && $scooter['battery'] <= 10)->count()
+            : ($hasFreshLiveStat ? (int) $liveStat->low_battery_scooters : 0);
 
         return [
             'branch_id' => $branch->id,
+            'vehicle_id' => $selectedVehicleId,
+            'vehicles' => $vehicles
+                ->map(fn (BranchVehicle $vehicle) => [
+                    'id' => $vehicle->id,
+                    'name' => $vehicle->name,
+                    'quantity' => max(1, (int) $vehicle->quantity),
+                ])
+                ->values()
+                ->all(),
             'total_scooters' => $totalScooters,
             'ongoing_rides' => $ongoingRides,
             'available_scooters' => max(0, $totalScooters - $ongoingRides),
-            'online_scooters' => $hasFreshLiveStat ? (int) $liveStat->online_scooters : 0,
-            'low_battery_scooters' => $hasFreshLiveStat ? (int) $liveStat->low_battery_scooters : 0,
+            'offline_scooters' => max(0, $totalScooters - ($ongoingRides + $onlineScooters)),
+            'online_scooters' => $onlineScooters,
+            'low_battery_scooters' => $lowBatteryScooters,
             'reported_at' => $hasFreshLiveStat ? $liveStat->reported_at->format('d M Y h:i A') : null,
-            'scooters' => $this->liveDashboardScooters($branch->id, $liveScooters),
+            'scooters' => $scooters,
         ];
     }
 
-    protected function liveDashboardScooters(int $branchId, $liveScooters): array
+    protected function liveDashboardScooters(int $branchId, $liveScooters, ?int $vehicleId = null): array
     {
         $liveBatteryByScooter = collect($liveScooters)
             ->mapWithKeys(function (array $scooter) {
@@ -130,9 +162,21 @@ class LoginController extends Controller
                 ];
             });
 
+        $liveChargingByScooter = collect($liveScooters)
+            ->mapWithKeys(function (array $scooter) {
+                $scooterId = trim((string) ($scooter['scooterId'] ?? ''));
+
+                if ($scooterId === '') {
+                    return [];
+                }
+
+                return [$scooterId => (bool) ($scooter['charging'] ?? false)];
+            });
+
         $rideQuery = BookingRide::query()
             ->whereNotNull('ride_number')
             ->where('ride_number', '!=', '')
+            ->when($vehicleId, fn ($query) => $query->where('branch_vehicle_id', $vehicleId))
             ->whereHas('booking', fn ($query) => $query->where('branch_id', $branchId));
 
         $rideNumbers = (clone $rideQuery)
@@ -157,17 +201,21 @@ class LoginController extends Controller
             ->groupBy('ride_number')
             ->pluck('total_km', 'ride_number');
 
-        return $rideNumbers
-            ->merge($liveBatteryByScooter->keys())
+        $scooterIds = $vehicleId ? $rideNumbers : $rideNumbers->merge($liveBatteryByScooter->keys());
+
+        return $scooterIds
             ->filter()
             ->unique()
-            ->map(function (string $scooterId) use ($liveBatteryByScooter, $ongoingRideNumbers, $assignCountsLastDay, $lifetimeKm) {
+            ->map(function (string $scooterId) use ($liveBatteryByScooter, $liveChargingByScooter, $ongoingRideNumbers, $assignCountsLastDay, $lifetimeKm) {
                 $battery = $liveBatteryByScooter->has($scooterId) ? $liveBatteryByScooter->get($scooterId) : null;
+                $charging = (bool) ($liveChargingByScooter->get($scooterId) ?? false);
 
                 return [
                     'scooter_name' => $scooterId,
                     'battery' => $battery,
-                    'status' => $ongoingRideNumbers->has($scooterId) ? 'ongoing' : 'available',
+                    'charging' => $charging,
+                    'is_online' => $liveBatteryByScooter->has($scooterId),
+                    'status' => $charging ? 'charging' : ($ongoingRideNumbers->has($scooterId) ? 'ongoing' : 'available'),
                     'assigned_24h_count' => (int) ($assignCountsLastDay[$scooterId] ?? 0),
                     'lifetime_km' => round((float) ($lifetimeKm[$scooterId] ?? 0), 3),
                 ];

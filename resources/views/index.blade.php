@@ -66,12 +66,24 @@
                             {{ $liveDashboardStats['reported_at'] ? 'Last update: ' . $liveDashboardStats['reported_at'] : 'Waiting for live app update' }}
                         </div>
                     </div>
-                    <div style="min-width: 220px;">
-                        <select class="form-select" id="liveBranchSelect">
-                            @foreach ($branches as $branch)
-                                <option value="{{ $branch->id }}" @selected($selectedBranchId === $branch->id)>{{ $branch->name }}</option>
-                            @endforeach
-                        </select>
+                    <div class="d-flex flex-wrap gap-2">
+                        <div style="min-width: 220px;">
+                            <select class="form-select" id="liveBranchSelect">
+                                @foreach ($branches as $branch)
+                                    <option value="{{ $branch->id }}" @selected($selectedBranchId === $branch->id)>{{ $branch->name }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div style="min-width: 220px;">
+                            <select class="form-select" id="liveVehicleSelect">
+                                <option value="">All vehicles</option>
+                                @foreach ($liveDashboardStats['vehicles'] as $vehicle)
+                                    <option value="{{ $vehicle['id'] }}" @selected($selectedVehicleId === $vehicle['id'])>
+                                        {{ $vehicle['name'] }} ({{ $vehicle['quantity'] }})
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
                     </div>
                 </div>
                 <div class="card-body">
@@ -92,6 +104,12 @@
                             <div class="border rounded p-3 h-100">
                                 <h6 class="text-muted mb-2">Available Scooter</h6>
                                 <h3 class="mb-0" data-live-stat="available_scooters">{{ number_format($liveDashboardStats['available_scooters']) }}</h3>
+                            </div>
+                        </div>
+                        <div class="col-md-6 col-xl">
+                            <div class="border rounded p-3 h-100">
+                                <h6 class="text-muted mb-2">Offline Scooter</h6>
+                                <h3 class="mb-0" data-live-stat="offline_scooters">{{ number_format($liveDashboardStats['offline_scooters']) }}</h3>
                             </div>
                         </div>
                         <div class="col-md-6 col-xl">
@@ -145,9 +163,11 @@
 <script>
     document.addEventListener('DOMContentLoaded', () => {
         const branchSelect = document.getElementById('liveBranchSelect');
+        const vehicleSelect = document.getElementById('liveVehicleSelect');
         const reportedAt = document.querySelector('[data-live-reported-at]');
         const scooterRows = document.querySelector('[data-live-scooter-rows]');
         const statsUrl = @json(route('dashboard.live-stats'));
+        let requestedVehicleId = vehicleSelect?.value || '';
 
         function setStat(key, value) {
             const target = document.querySelector(`[data-live-stat="${key}"]`);
@@ -195,6 +215,31 @@
             });
         }
 
+        function renderVehicleOptions(vehicles, selectedVehicleId) {
+            if (!vehicleSelect) {
+                return;
+            }
+
+            vehicleSelect.innerHTML = '';
+
+            const allOption = document.createElement('option');
+            allOption.value = '';
+            allOption.textContent = 'All vehicles';
+            vehicleSelect.appendChild(allOption);
+
+            (Array.isArray(vehicles) ? vehicles : []).forEach((vehicle) => {
+                const option = document.createElement('option');
+                option.value = String(vehicle.id);
+                option.textContent = `${vehicle.name} (${new Intl.NumberFormat().format(Number(vehicle.quantity || 0))})`;
+                vehicleSelect.appendChild(option);
+            });
+
+            const resolvedVehicleId = selectedVehicleId ? String(selectedVehicleId) : '';
+            vehicleSelect.value = resolvedVehicleId;
+            requestedVehicleId = resolvedVehicleId;
+            vehicleSelect.disabled = vehicleSelect.options.length <= 1;
+        }
+
         async function refreshLiveDashboard() {
             if (!branchSelect) {
                 return;
@@ -202,6 +247,9 @@
 
             const url = new URL(statsUrl, window.location.origin);
             url.searchParams.set('branch_id', branchSelect.value);
+            if (requestedVehicleId) {
+                url.searchParams.set('vehicle_id', requestedVehicleId);
+            }
 
             const response = await fetch(url, {
                 headers: {
@@ -215,6 +263,7 @@
             }
 
             Object.entries(payload.stats).forEach(([key, value]) => setStat(key, value));
+            renderVehicleOptions(payload.stats.vehicles, payload.stats.vehicle_id);
             renderScooterRows(payload.stats.scooters);
 
             if (reportedAt) {
@@ -224,7 +273,14 @@
             }
         }
 
-        branchSelect?.addEventListener('change', refreshLiveDashboard);
+        branchSelect?.addEventListener('change', () => {
+            requestedVehicleId = '';
+            refreshLiveDashboard();
+        });
+        vehicleSelect?.addEventListener('change', () => {
+            requestedVehicleId = vehicleSelect.value;
+            refreshLiveDashboard();
+        });
         window.setInterval(refreshLiveDashboard, 60000);
     });
 </script>

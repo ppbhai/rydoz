@@ -364,13 +364,21 @@
         return Number.isFinite(km) ? km : null;
     }
 
+    function telemetryCharging(data) {
+        if (!data || data.raw || typeof data.charging === 'undefined') {
+            return false;
+        }
+
+        return data.charging === true || data.charging === 1 || data.charging === '1' || data.charging === 'true';
+    }
+
     function formatConnectedMessage(scooterId, telemetry) {
         const parts = [`Bluetooth connected${scooterId ? `: ${scooterId}` : ''}`];
         const battery = telemetryBattery(telemetry);
         const km = telemetryKm(telemetry);
 
         if (battery !== null) {
-            parts.push(`Battery ${battery}%`);
+            parts.push(`Battery ${battery}%${telemetryCharging(telemetry) ? ' Charging' : ''}`);
         }
 
         if (km !== null) {
@@ -459,7 +467,7 @@
             item.className = 'nearby-scooter-row';
             name.textContent = scooter.scooterId;
             battery.className = 'nearby-scooter-battery';
-            battery.textContent = `${scooter.battery}%`;
+            battery.textContent = `${scooter.battery}%${scooter.charging ? ' Charging' : ''}`;
             battery.dataset.level = scooter.battery <= 20 ? 'low' : scooter.battery <= 50 ? 'medium' : 'good';
 
             item.append(name, battery);
@@ -521,6 +529,7 @@
             .map((scooter) => ({
                 scooterId: scooter.scooterId,
                 battery: scooter.battery,
+                charging: scooter.charging === true,
             }));
 
         await fetch(url, {
@@ -788,7 +797,7 @@
             }
 
             if (typeof data.battery !== 'undefined') {
-                parts.push(`${data.battery}%`);
+                parts.push(`${data.battery}%${telemetryCharging(data) ? ' Charging' : ''}`);
                 setBatteryInput(form, Number(data.battery));
             }
 
@@ -811,6 +820,7 @@
             nearbyScooters.set(data.scooterId, {
                 scooterId: data.scooterId,
                 battery: Number(data.battery),
+                charging: data.charging === true || data.charging === 1 || data.charging === '1' || data.charging === 'true',
                 rssi: Number(data.rssi),
                 mac: data.mac || '',
                 seenAt: Date.now(),
