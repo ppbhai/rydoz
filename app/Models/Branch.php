@@ -16,6 +16,7 @@ class Branch extends Model
         'vehicle_number_required',
         'document_select_enabled',
         'free_trial_enabled',
+        'iot_enabled',
     ];
 
     protected function casts(): array
@@ -26,6 +27,7 @@ class Branch extends Model
             'vehicle_number_required' => 'boolean',
             'document_select_enabled' => 'boolean',
             'free_trial_enabled' => 'boolean',
+            'iot_enabled' => 'boolean',
         ];
     }
 

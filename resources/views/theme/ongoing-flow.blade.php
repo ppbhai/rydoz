@@ -26,6 +26,7 @@
                 @forelse ($bookings as $booking)
                     @php
                         $numberCompletionEnabled = $branch->vehicle_number_required || $branch->scanner_enabled;
+                        $completionBoxEnabled = $numberCompletionEnabled || $branch->iot_enabled;
                         $assignedAt = $booking->rides
                             ->where('status', 'ongoing')
                             ->pluck('start_time')
@@ -85,12 +86,10 @@
                                     @php
                                         $expectedEnd = $ride->start_time ? $ride->start_time->copy()->addMinutes($ride->vehicle_time) : null;
                                     @endphp
-                                    <form method="POST" action="{{ route('ride.finish.single', $ride) }}" class="assign-row" data-iot-command="STOP">
+                                    <form method="POST" action="{{ route('ride.finish.single', $ride) }}" class="assign-row">
                                         @csrf
                                         <input type="hidden" name="return_search" value="{{ $search }}">
                                         <input type="hidden" name="return_booking" value="{{ $booking->id }}">
-                                        <input type="hidden" name="iot_distance_km" value="" data-iot-distance-input>
-                                        <input type="hidden" name="iot_battery_percent" value="" data-iot-battery-input>
 
                                         <div style="display: flex; justify-content:space-between">
                                             <div class="assign-name" style="font-size: 15px; font-weight:700;">{{ $ride->vehicle_name }}</div>
@@ -114,28 +113,8 @@
                                             @endif
                                         </div>
 
-                                        @if ($ride->status === 'ongoing')
-                                            <div class="scanner-field mt-2">
-                                                <input type="text" class="form-control assign-input ride-number-input"
-                                                    id="finish-iot-device-{{ $ride->id }}"
-                                                    value="{{ $ride->ride_number }}"
-                                                    name="iot_device_id"
-                                                    placeholder="IoT Device ID"
-                                                    data-iot-device-input>
-                                                <button type="button"
-                                                    class="btn btn-light-theme scanner-btn scan-trigger"
-                                                    data-target-input="finish-iot-device-{{ $ride->id }}"
-                                                    data-iot-scan
-                                                    data-iot-target="finish-iot-device-{{ $ride->id }}"
-                                                    aria-label="Scan IoT QR">
-                                                    <i class="fas fa-bluetooth-b"></i>
-                                                </button>
-                                            </div>
-                                            <div class="iot-status small mt-1" data-iot-status>Scan IoT QR to connect Bluetooth.</div>
-                                        @endif
-
                                         <div class="action-timer-row">
-                                            @if ($ride->status === 'ongoing' && !$numberCompletionEnabled)
+                                            @if ($ride->status === 'ongoing' && !$completionBoxEnabled)
                                                 <button class="btn btn-theme w-100" type="submit">Complete {{ $ride->vehicle_name }}</button>
                                             @endif
                                         </div>
@@ -143,44 +122,50 @@
                                 @endforeach
                             </div>
 
-                                     @if ($numberCompletionEnabled)
-                                <form method="POST" action="{{ route('ride.finish.number', $booking) }}" class="assign-row mb-2" data-iot-command="STOP">
+                                     @if ($completionBoxEnabled)
+                                <form method="POST" action="{{ route('ride.finish.number', $booking) }}" class="assign-row mb-2" @if ($branch->iot_enabled) data-iot-command="STOP" @endif>
                                     @csrf
                                     <input type="hidden" name="return_search" value="{{ $search }}">
                                     <input type="hidden" name="return_booking" value="{{ $booking->id }}">
-                                    <input type="hidden" name="iot_distance_km" value="" data-iot-distance-input>
-                                    <input type="hidden" name="iot_battery_percent" value="" data-iot-battery-input>
+                                    @if ($branch->iot_enabled)
+                                        <input type="hidden" name="iot_distance_km" value="" data-iot-distance-input>
+                                        <input type="hidden" name="iot_battery_percent" value="" data-iot-battery-input>
+                                    @endif
                                     <div class="assign-row-top">
                                         <div class="assign-name">Vehicle ID</div>
-                                        <div class="scanner-field">
-                                            <input type="text" class="form-control assign-input ride-number-input"
-                                                id="complete-number-{{ $booking->id }}" name="ride_number"
-                                                placeholder="Enter Id Number">
-                                            @if ($branch->scanner_enabled)
+                                        @if ($numberCompletionEnabled)
+                                            <div class="scanner-field">
+                                                <input type="text" class="form-control assign-input ride-number-input"
+                                                    id="complete-number-{{ $booking->id }}" name="ride_number"
+                                                    placeholder="Enter Id Number">
+                                                @if ($branch->scanner_enabled)
+                                                    <button type="button"
+                                                        class="btn btn-light-theme scanner-btn scan-trigger"
+                                                        data-target-input="complete-number-{{ $booking->id }}"
+                                                        aria-label="Scan barcode">
+                                                        <i class="fas fa-barcode"></i>
+                                                    </button>
+                                                @endif
+                                            </div>
+                                        @endif
+                                        @if ($branch->iot_enabled)
+                                            <div class="scanner-field">
+                                                <input type="text" class="form-control assign-input ride-number-input"
+                                                    id="complete-iot-device-{{ $booking->id }}"
+                                                    name="iot_device_id"
+                                                    placeholder="IoT Device ID"
+                                                    data-iot-device-input>
                                                 <button type="button"
                                                     class="btn btn-light-theme scanner-btn scan-trigger"
-                                                    data-target-input="complete-number-{{ $booking->id }}"
-                                                    aria-label="Scan barcode">
-                                                    <i class="fas fa-barcode"></i>
+                                                    data-target-input="complete-iot-device-{{ $booking->id }}"
+                                                    data-iot-scan
+                                                    data-iot-target="complete-iot-device-{{ $booking->id }}"
+                                                    aria-label="Scan IoT QR">
+                                                    <i class="fas fa-bluetooth-b"></i>
                                                 </button>
-                                            @endif
-                                        </div>
-                                        <div class="scanner-field">
-                                            <input type="text" class="form-control assign-input ride-number-input"
-                                                id="complete-iot-device-{{ $booking->id }}"
-                                                name="iot_device_id"
-                                                placeholder="IoT Device ID"
-                                                data-iot-device-input>
-                                            <button type="button"
-                                                class="btn btn-light-theme scanner-btn scan-trigger"
-                                                data-target-input="complete-iot-device-{{ $booking->id }}"
-                                                data-iot-scan
-                                                data-iot-target="complete-iot-device-{{ $booking->id }}"
-                                                aria-label="Scan IoT QR">
-                                                <i class="fas fa-bluetooth-b"></i>
-                                            </button>
-                                        </div>
-                                        <div class="iot-status small mt-1" data-iot-status>Scan IoT QR to connect Bluetooth.</div>
+                                            </div>
+                                            <div class="iot-status small mt-1" data-iot-status>Scan IoT QR to connect Bluetooth.</div>
+                                        @endif
                                         <button class="btn btn-theme" type="submit">Complete</button>
                                     </div>
                                 </form>

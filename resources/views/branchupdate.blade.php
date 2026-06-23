@@ -54,6 +54,13 @@
                                 <option value="1" @selected($branch->free_trial_enabled)>On</option>
                             </select>
                         </div>
+                        <div class="col-md-3">
+                            <label class="form-label">IoT Control</label>
+                            <select class="form-select" name="iot_enabled">
+                                <option value="0" @selected(!$branch->iot_enabled)>Off</option>
+                                <option value="1" @selected($branch->iot_enabled)>On</option>
+                            </select>
+                        </div>
                         <div class="col-12">
                             <button class="btn btn-primary" type="submit">Update Branch</button>
                         </div>

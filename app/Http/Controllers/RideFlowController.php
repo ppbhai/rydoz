@@ -103,7 +103,7 @@ class RideFlowController extends Controller
         $this->ensureUserLoggedIn();
         $branch = $this->currentBranch();
 
-        abort_unless($branch && $branch->free_trial_enabled, 403);
+        abort_unless($branch && $branch->free_trial_enabled && $branch->iot_enabled, 403);
 
         return view('theme.free-trial');
     }
@@ -568,9 +568,9 @@ class RideFlowController extends Controller
         $branch = $this->currentBranch();
         abort_unless($branch, 403);
 
-        if (!$branch->vehicle_number_required && !$branch->scanner_enabled) {
+        if (!$branch->vehicle_number_required && !$branch->scanner_enabled && !$branch->iot_enabled) {
             return redirect()->route('ongoing', ['booking' => $booking->id])
-                ->with('error', 'Vehicle number completion is not enabled for this branch.');
+                ->with('error', 'Vehicle number or IoT completion is not enabled for this branch.');
         }
 
         $validated = $request->validate([

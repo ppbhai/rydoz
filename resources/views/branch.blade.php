@@ -58,6 +58,13 @@
                                 <option value="1">On</option>
                             </select>
                         </div>
+                        <div class="col-md-3">
+                            <label class="form-label">IoT Control</label>
+                            <select class="form-select" name="iot_enabled">
+                                <option value="0">Off</option>
+                                <option value="1">On</option>
+                            </select>
+                        </div>
                         <div class="col-12">
                             <button class="btn btn-primary" type="submit">Add Branch</button>
                         </div>
@@ -82,6 +89,7 @@
                                     <th>Vehicle No.</th>
                                     <th>Document Select</th>
                                     <th>Free Trial</th>
+                                    <th>IoT</th>
                                     <th>Action</th>
                                 </tr>
                             </thead>
@@ -96,6 +104,7 @@
                                         <td>{{ $branch->vehicle_number_required ? 'On' : 'Off' }}</td>
                                         <td>{{ $branch->document_select_enabled ? 'On' : 'Off' }}</td>
                                         <td>{{ $branch->free_trial_enabled ? 'On' : 'Off' }}</td>
+                                        <td>{{ $branch->iot_enabled ? 'On' : 'Off' }}</td>
                                         <td>
                                             <a href="{{ route('branchupdate', $branch) }}" class="btn btn-sm btn-primary">Edit</a>
                                             <form action="{{ route('branchdelete.bookings', $branch) }}" method="POST" class="d-inline" onsubmit="return confirm('Delete only booking data for this branch? Users, branch, and vehicle data will stay.');">

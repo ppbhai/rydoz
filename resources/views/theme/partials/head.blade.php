@@ -989,7 +989,7 @@
         }
     </style>
 </head>
-<script src="{{ URL::asset('assets/js/scooter-iot-bridge.js') }}?v=20260621-1"></script>
+<script src="{{ URL::asset('assets/js/scooter-iot-bridge.js') }}?v=20260623-2"></script>
 <script>
     document.addEventListener('DOMContentLoaded', () => {
         const navigationEntry = performance.getEntriesByType('navigation')[0];
@@ -1127,7 +1127,7 @@
                         const rawValue = (barcodes[0].rawValue || '').trim();
 
                         if (rawValue !== '') {
-                            scannerTargetInput.value = window.ScooterIot?.normalizeScooterId
+                            scannerTargetInput.value = scannerTargetInput.hasAttribute('data-iot-device-input') && window.ScooterIot?.normalizeScooterId
                                 ? window.ScooterIot.normalizeScooterId(rawValue)
                                 : rawValue;
                             scannerTargetInput.dispatchEvent(new Event('input', { bubbles: true }));

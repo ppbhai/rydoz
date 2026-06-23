@@ -45,7 +45,7 @@
                     style="min-height:40px; padding:10px 16px; align-items:center; justify-content:center; background:var(--brand); color:#fff; border-radius:999px;">
                     <div class="metric-value" style="color:#fff; font-size:1.2rem;">Completed Rides</div>
                 </a>
-                @if ($branch->free_trial_enabled)
+                @if ($branch->free_trial_enabled && $branch->iot_enabled)
                     <a href="{{ route('free-trial') }}" class="metric-card"
                         style="min-height:40px; padding:10px 16px; align-items:center; justify-content:center; background:var(--brand); color:#fff; border-radius:999px;">
                         <div class="metric-value" style="color:#fff; font-size:1.2rem;">Free Trial</div>
@@ -98,11 +98,13 @@
                                 <div class="compact-stack">
                                     @foreach ($booking->rides as $ride)
                                         <form method="POST" action="{{ route('ride.assign.single', $ride) }}"
-                                            class="assign-row" data-iot-command="START">
+                                            class="assign-row" @if ($branch->iot_enabled) data-iot-command="START" @endif>
                                             @csrf
                                             <input type="hidden" name="return_search" value="{{ $search }}">
                                             <input type="hidden" name="return_booking" value="{{ $booking->id }}">
-                                            <input type="hidden" name="iot_battery_percent" value="" data-iot-battery-input>
+                                            @if ($branch->iot_enabled)
+                                                <input type="hidden" name="iot_battery_percent" value="" data-iot-battery-input>
+                                            @endif
                                             <div class="assign-row-top">
                                                 <div class="assign-name">{{ $ride->vehicle_name }}</div>
                                                 <div style="display: flex;">
@@ -131,25 +133,27 @@
                                                     <span><strong class="live-end-time"
                                                             data-duration-minutes="{{ $ride->vehicle_time }}"></strong></span>
                                                 </div>
-                                                <div class="scanner-field mt-2">
-                                                    <input type="text"
-                                                        class="form-control assign-input ride-number-input"
-                                                        id="iot-device-{{ $ride->id }}"
-                                                        value="{{ $ride->ride_number }}"
-                                                        name="iot_device_id"
-                                                        placeholder="IoT Device ID"
-                                                        data-ride-number-target="ride-number-{{ $ride->id }}"
-                                                        data-iot-device-input>
-                                                    <button type="button"
-                                                        class="btn btn-light-theme scanner-btn scan-trigger"
-                                                        data-target-input="iot-device-{{ $ride->id }}"
-                                                        data-iot-scan
-                                                        data-iot-target="iot-device-{{ $ride->id }}"
-                                                        aria-label="Scan IoT QR">
-                                                        <i class="fas fa-bluetooth-b"></i>
-                                                    </button>
-                                                </div>
-                                                <div class="iot-status small mt-1" data-iot-status>Scan IoT QR to connect Bluetooth.</div>
+                                                @if ($branch->iot_enabled)
+                                                    <div class="scanner-field mt-2">
+                                                        <input type="text"
+                                                            class="form-control assign-input ride-number-input"
+                                                            id="iot-device-{{ $ride->id }}"
+                                                            value="{{ $ride->ride_number }}"
+                                                            name="iot_device_id"
+                                                            placeholder="IoT Device ID"
+                                                            data-ride-number-target="ride-number-{{ $ride->id }}"
+                                                            data-iot-device-input>
+                                                        <button type="button"
+                                                            class="btn btn-light-theme scanner-btn scan-trigger"
+                                                            data-target-input="iot-device-{{ $ride->id }}"
+                                                            data-iot-scan
+                                                            data-iot-target="iot-device-{{ $ride->id }}"
+                                                            aria-label="Scan IoT QR">
+                                                            <i class="fas fa-bluetooth-b"></i>
+                                                        </button>
+                                                    </div>
+                                                    <div class="iot-status small mt-1" data-iot-status>Scan IoT QR to connect Bluetooth.</div>
+                                                @endif
                                                 <button type="submit" class="btn btn-theme w-100 mt-2">Assign
                                                     {{ $ride->vehicle_name }}</button>
                                             @else
