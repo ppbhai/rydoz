@@ -103,6 +103,7 @@
                                             <input type="hidden" name="return_search" value="{{ $search }}">
                                             <input type="hidden" name="return_booking" value="{{ $booking->id }}">
                                             @if ($branch->iot_enabled)
+                                                <input type="hidden" name="iot_assign_expected" value="1">
                                                 <input type="hidden" name="iot_battery_percent" value="" data-iot-battery-input>
                                             @endif
                                             <div class="assign-row-top">

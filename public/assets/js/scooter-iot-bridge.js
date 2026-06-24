@@ -283,8 +283,9 @@
         }
 
         const immediateResult = safeJson(await nativeCall('readTelemetry'));
-        const immediateTelemetry = immediateResult.telemetry && typeof immediateResult.telemetry === 'object'
-            ? immediateResult.telemetry
+        const parsedImmediateTelemetry = safeJson(immediateResult.telemetry);
+        const immediateTelemetry = parsedImmediateTelemetry && !parsedImmediateTelemetry.raw
+            ? parsedImmediateTelemetry
             : null;
 
         if (immediateTelemetry) {
@@ -327,6 +328,10 @@
     }
 
     function safeJson(value) {
+        if (value && typeof value === 'object') {
+            return value;
+        }
+
         try {
             return JSON.parse(value);
         } catch (error) {
@@ -364,6 +369,22 @@
         return Number.isFinite(km) ? km : null;
     }
 
+    function telemetryActualSeconds(data) {
+        if (!data || data.raw) {
+            return null;
+        }
+
+        const value = data.actual_scooter_on_seconds ?? data.onSeconds ?? data.seconds;
+
+        if (typeof value === 'undefined') {
+            return null;
+        }
+
+        const seconds = Number(value);
+
+        return Number.isFinite(seconds) && seconds >= 0 ? Math.round(seconds) : null;
+    }
+
     function telemetryCharging(data) {
         if (!data || data.raw || typeof data.charging === 'undefined') {
             return false;
@@ -392,6 +413,17 @@
         setHiddenInput(form, '[data-iot-battery-input]', battery !== null ? String(battery) : '');
     }
 
+    function nearbyBattery(scooterId) {
+        const scooter = nearbyScooters.get(normalizeScooterId(scooterId || ''));
+        const battery = Number(scooter?.battery);
+
+        return Number.isFinite(battery) ? battery : null;
+    }
+
+    function setActualSecondsInput(form, seconds) {
+        setHiddenInput(form, '[data-iot-actual-seconds-input]', seconds !== null ? String(seconds) : '');
+    }
+
     async function refreshTelemetry(form, scooterId) {
         const telemetry = await readFinalTelemetry();
         const remembered = latestTelemetryByScooter.get(scooterId || activeScooterId) || latestTelemetry;
@@ -399,7 +431,7 @@
 
         if (selectedTelemetry) {
             rememberTelemetry(selectedTelemetry);
-            captureKmOnForm(form, selectedTelemetry);
+            captureTelemetryOnMatchingForms(selectedTelemetry, form);
         }
 
         return selectedTelemetry || null;
@@ -407,12 +439,25 @@
 
     async function ensureAssignableBattery(form, scooterId) {
         setStatus(form, 'Checking scooter battery...', 'pending');
-        const telemetry = await refreshTelemetry(form, scooterId);
-        const battery = telemetryBattery(telemetry);
+        let telemetry = null;
+        let battery = nearbyBattery(scooterId);
+
+        for (let attempt = 0; attempt < 6 && battery === null; attempt++) {
+            telemetry = await refreshTelemetry(form, scooterId).catch(() => null);
+            battery = telemetryBattery(telemetry) ?? nearbyBattery(scooterId);
+
+            if (battery === null) {
+                await wait(700);
+            }
+        }
 
         setBatteryInput(form, battery);
 
-        if (battery !== null && battery <= MIN_ASSIGN_BATTERY_PERCENT) {
+        if (battery === null) {
+            throw new Error('IoT battery was not received. Keep Bluetooth connected and try Assign again.');
+        }
+
+        if (battery <= MIN_ASSIGN_BATTERY_PERCENT) {
             throw new Error(`Battery ${battery}% is too low. Assign another scooter.`);
         }
 
@@ -487,7 +532,7 @@
     async function startNearbyScan() {
         const empty = document.querySelector('[data-nearby-scooter-empty]');
 
-        if (!document.querySelector('[data-nearby-scooter-list]')) {
+        if (!document.querySelector('[data-nearby-scooter-list]') && !document.querySelector('form[data-iot-command]')) {
             return;
         }
 
@@ -632,6 +677,69 @@
         }
     }
 
+    function setIotTelemetryInputs(form, data) {
+        if (!form || !data || data.raw) {
+            return false;
+        }
+
+        let captured = false;
+        const km = telemetryKm(data);
+        const battery = telemetryBattery(data);
+        const actualSeconds = telemetryActualSeconds(data);
+
+        if (km !== null) {
+            setHiddenInput(form, '[data-iot-distance-input]', km.toFixed(3));
+            captured = true;
+        }
+
+        if (battery !== null) {
+            setBatteryInput(form, battery);
+            captured = true;
+        }
+
+        if (actualSeconds !== null) {
+            setActualSecondsInput(form, actualSeconds);
+            captured = true;
+        }
+
+        return captured;
+    }
+
+    function formMatchesScooter(form, scooterId) {
+        if (!form || !scooterId) {
+            return false;
+        }
+
+        const iotInput = form.querySelector('[data-iot-device-input]');
+        const rideNumberInput = form.querySelector('input[name="ride_number"]');
+
+        return normalizeScooterId(iotInput?.value || '') === scooterId
+            || normalizeScooterId(rideNumberInput?.value || '') === scooterId
+            || form.dataset.connectedScooterId === scooterId;
+    }
+
+    function captureTelemetryOnMatchingForms(data, preferredForm = null) {
+        if (!data || data.raw) {
+            return;
+        }
+
+        const scooterId = normalizeScooterId(data.id || activeScooterId || '');
+
+        if (preferredForm) {
+            setIotTelemetryInputs(preferredForm, data);
+        }
+
+        document.querySelectorAll('form[data-iot-command]').forEach((form) => {
+            if (form === preferredForm) {
+                return;
+            }
+
+            if (!scooterId || formMatchesScooter(form, scooterId)) {
+                setIotTelemetryInputs(form, data);
+            }
+        });
+    }
+
     function prepareTripTelemetry(form, scooterId) {
         const telemetry = latestTelemetryByScooter.get(scooterId || activeScooterId) || latestTelemetry;
 
@@ -639,8 +747,7 @@
             return false;
         }
 
-        if (typeof telemetry.km !== 'undefined') {
-            setHiddenInput(form, '[data-iot-distance-input]', Number(telemetry.km).toFixed(3));
+        if (setIotTelemetryInputs(form, telemetry) && telemetryKm(telemetry) !== null) {
             return true;
         }
 
@@ -652,7 +759,7 @@
             return false;
         }
 
-        setHiddenInput(form, '[data-iot-distance-input]', Number(data.km).toFixed(3));
+        setIotTelemetryInputs(form, data);
         return true;
     }
 
@@ -687,6 +794,11 @@
         activeForm = form;
 
         const input = form.querySelector('[data-iot-device-input]');
+        const fallbackRideNumberInput = form.querySelector('input[name="ride_number"]');
+
+        if (input && !input.value.trim() && fallbackRideNumberInput?.value?.trim()) {
+            input.value = fallbackRideNumberInput.value.trim();
+        }
 
         if (!input || !input.value.trim()) {
             return;
@@ -699,32 +811,59 @@
             const scooterId = await connect(input.value, form);
             input.value = scooterId || preparedScooterId;
             syncVehicleNumberFromIotInput(input);
+            if (command === 'START') {
+                await ensureAssignableBattery(form, scooterId);
+            }
             setStatus(form, command === 'START' ? 'Powering scooter on...' : 'Powering scooter off...', 'pending');
+            let stopTelemetryBeforeCommand = null;
             if (command === 'START') {
                 await wait(650);
                 await sendCommand('RESET_KM', form);
                 await wait(250);
+            } else if (command === 'STOP') {
+                setStatus(form, 'Reading scooter telemetry...', 'pending');
+                stopTelemetryBeforeCommand = await refreshTelemetry(form, scooterId).catch(() => null);
+                if (stopTelemetryBeforeCommand) {
+                    captureTelemetryOnMatchingForms(stopTelemetryBeforeCommand, form);
+                }
+                await wait(300);
+                setStatus(form, 'Powering scooter off...', 'pending');
             }
             await sendCommand(command, form);
             setStatus(form, command === 'START' ? 'Scooter powered on' : 'Scooter powered off', 'connected');
             if (command === 'START') {
                 await wait(1200);
                 const telemetry = await refreshTelemetry(form, scooterId).catch(() => null);
-                setBatteryInput(form, telemetryBattery(telemetry));
+                const battery = telemetryBattery(telemetry) ?? nearbyBattery(scooterId);
+
+                if (battery !== null) {
+                    setBatteryInput(form, battery);
+                }
             } else if (command === 'STOP') {
                 setStatus(form, 'Waiting for final KM...', 'pending');
-                await wait(4500);
-                const telemetry = await refreshTelemetry(form, scooterId);
+                await wait(1500);
+                const telemetryAfterStop = await refreshTelemetry(form, scooterId).catch(() => null);
+                const telemetry = telemetryAfterStop || stopTelemetryBeforeCommand || latestTelemetryByScooter.get(scooterId) || latestTelemetry;
+                if (telemetry) {
+                    captureTelemetryOnMatchingForms(telemetry, form);
+                }
                 const hasKm = prepareTripTelemetry(form, scooterId);
                 const battery = telemetryBattery(telemetry);
+                const actualSeconds = telemetryActualSeconds(telemetry);
                 setBatteryInput(form, battery);
                 const km = telemetryKm(telemetry);
+                captureTelemetryOnMatchingForms(telemetry, form);
+
+                if (hasNativeBridge() && !hasKm && battery === null && actualSeconds === null) {
+                    throw new Error('IoT telemetry was not received. Scan/connect IoT and try Complete again.');
+                }
+
                 setStatus(
                     form,
                     hasKm
-                        ? `Final KM captured: ${(km ?? Number(form.querySelector('[data-iot-distance-input]')?.value || 0)).toFixed(3)} km${battery !== null ? ` | Battery ${battery}%` : ''}`
-                        : `Final KM not received${battery !== null ? ` | Battery ${battery}%` : ''}.`,
-                    hasKm ? 'connected' : 'error'
+                        ? `Final KM captured: ${(km ?? Number(form.querySelector('[data-iot-distance-input]')?.value || 0)).toFixed(3)} km${battery !== null ? ` | Battery ${battery}%` : ''}${actualSeconds !== null ? ` | On ${actualSeconds}s` : ''}`
+                        : `Final KM not received${battery !== null ? ` | Battery ${battery}%` : ''}${actualSeconds !== null ? ` | On ${actualSeconds}s` : ''}.`,
+                    hasKm || battery !== null || actualSeconds !== null ? 'connected' : 'error'
                 );
             }
             await disconnectBluetooth();
@@ -788,7 +927,7 @@
             }
 
             rememberTelemetry(data);
-            captureKmOnForm(form, data);
+            captureTelemetryOnMatchingForms(data, form);
 
             const parts = [];
 

@@ -128,8 +128,10 @@
                                     <input type="hidden" name="return_search" value="{{ $search }}">
                                     <input type="hidden" name="return_booking" value="{{ $booking->id }}">
                                     @if ($branch->iot_enabled)
+                                        <input type="hidden" name="iot_completion_expected" value="1">
                                         <input type="hidden" name="iot_distance_km" value="" data-iot-distance-input>
                                         <input type="hidden" name="iot_battery_percent" value="" data-iot-battery-input>
+                                        <input type="hidden" name="actual_scooter_on_seconds" value="" data-iot-actual-seconds-input>
                                     @endif
                                     <div class="assign-row-top">
                                         <div class="assign-name">Vehicle ID</div>

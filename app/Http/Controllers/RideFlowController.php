@@ -460,6 +460,7 @@ class RideFlowController extends Controller
         $validated = $request->validate([
             'ride_number' => ['nullable', 'string', 'max:50'],
             'iot_device_id' => ['nullable', 'string', 'max:100'],
+            'iot_assign_expected' => ['nullable', 'boolean'],
             'iot_battery_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'return_search' => ['nullable', 'string', 'max:255'],
             'return_booking' => ['nullable', 'integer'],
@@ -476,6 +477,10 @@ class RideFlowController extends Controller
             return back()->with('error', 'Vehicle number is required for this ride.');
         }
 
+        if ($request->boolean('iot_assign_expected') && blank($validated['iot_battery_percent'] ?? null)) {
+            return back()->with('error', 'IoT battery was not received. Please scan/connect IoT and assign again.');
+        }
+
         if (array_key_exists('iot_battery_percent', $validated) && $validated['iot_battery_percent'] !== null && (float) $validated['iot_battery_percent'] <= 10) {
             return back()->with('error', 'Scooter battery is too low. Assign another scooter.');
         }
@@ -483,6 +488,13 @@ class RideFlowController extends Controller
         if ($rideNumber !== '' && $this->rideNumberAlreadyAssigned($branch->id, $ride->branch_vehicle_id, $rideNumber, $ride->id)) {
             return back()->with('error', $ride->vehicle_name . ' number ' . $rideNumber . ' is already assigned in this branch.');
         }
+
+        Log::info('Ride IoT assign battery capture', [
+            'ride_id' => $ride->id,
+            'ride_number' => $rideNumber,
+            'raw_iot_battery_percent' => $validated['iot_battery_percent'] ?? null,
+            'assign_battery_percent' => $this->validatedBatteryPercent($validated['iot_battery_percent'] ?? null),
+        ]);
 
         $ride->update([
             'ride_number' => $rideNumber !== '' ? $rideNumber : null,
@@ -558,6 +570,7 @@ class RideFlowController extends Controller
             'return_booking' => ['nullable', 'integer'],
             'iot_distance_km' => ['nullable', 'numeric', 'min:0', 'max:99999'],
             'iot_battery_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'actual_scooter_on_seconds' => ['nullable', 'integer', 'min:0', 'max:4294967295'],
         ]);
 
         $booking = $this->finishRideAndRefreshBooking($ride, $branch, $validated);
@@ -593,8 +606,10 @@ class RideFlowController extends Controller
         $validated = $request->validate([
             'ride_number' => ['nullable', 'string', 'max:50'],
             'iot_device_id' => ['nullable', 'string', 'max:100'],
+            'iot_completion_expected' => ['nullable', 'boolean'],
             'iot_distance_km' => ['nullable', 'numeric', 'min:0', 'max:99999'],
             'iot_battery_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'actual_scooter_on_seconds' => ['nullable', 'integer', 'min:0', 'max:4294967295'],
             'return_search' => ['nullable', 'string', 'max:255'],
             'return_booking' => ['nullable', 'integer'],
         ]);
@@ -608,6 +623,15 @@ class RideFlowController extends Controller
 
         if ($rideNumber === '') {
             return back()->with('error', 'Vehicle number is required for this ride.');
+        }
+
+        if (
+            $request->boolean('iot_completion_expected')
+            && blank($validated['iot_distance_km'] ?? null)
+            && blank($validated['iot_battery_percent'] ?? null)
+            && blank($validated['actual_scooter_on_seconds'] ?? null)
+        ) {
+            return back()->with('error', 'IoT final telemetry was not received. Please scan/connect IoT and complete again.');
         }
 
         $ride = $booking->rides()
@@ -655,22 +679,27 @@ class RideFlowController extends Controller
 
         foreach ($ongoingRides as $ride) {
             $actualMinutes = $this->calculateActualRideMinutes($ride, $endTime);
-            $charge = $this->calculateRideCharge($ride, $actualMinutes, (int) $branch->buffer_time);
-            $tripDistanceKm = $this->validatedTripDistance($request->input('iot_distance_km'));
+        $charge = $this->calculateRideCharge($ride, $actualMinutes, (int) $branch->buffer_time);
+        $tripDistanceKm = $this->validatedTripDistance($request->input('iot_distance_km'));
+        $actualScooterOnSeconds = $this->validatedActualScooterOnSeconds($request->input('actual_scooter_on_seconds'));
+        $averageSpeedKph = $this->calculateAverageSpeedKph($tripDistanceKm, $actualMinutes, $actualScooterOnSeconds);
 
             Log::info('Ride IoT trip capture', [
                 'ride_id' => $ride->id,
                 'ride_number' => $ride->ride_number,
                 'raw_iot_distance_km' => $request->input('iot_distance_km'),
                 'trip_distance_km' => $tripDistanceKm,
+                'raw_actual_scooter_on_seconds' => $request->input('actual_scooter_on_seconds'),
+                'actual_scooter_on_seconds' => $actualScooterOnSeconds,
             ]);
 
             $ride->update([
                 'end_time' => $endTime,
                 'actual_minutes' => $actualMinutes,
                 'trip_distance_km' => $tripDistanceKm,
-                'average_speed_kph' => $this->calculateAverageSpeedKph($tripDistanceKm, $actualMinutes),
+                'average_speed_kph' => $averageSpeedKph,
                 'complete_battery_percent' => $this->validatedBatteryPercent($request->input('iot_battery_percent')),
+                'actual_scooter_on_seconds' => $actualScooterOnSeconds,
                 'charge' => $charge,
                 'status' => 'finished',
             ]);
@@ -1015,20 +1044,25 @@ class RideFlowController extends Controller
         $actualMinutes = $this->calculateActualRideMinutes($ride, $endTime);
         $charge = $this->calculateRideCharge($ride, $actualMinutes, (int) $branch->buffer_time);
         $tripDistanceKm = $this->validatedTripDistance($input['iot_distance_km'] ?? null);
+        $actualScooterOnSeconds = $this->validatedActualScooterOnSeconds($input['actual_scooter_on_seconds'] ?? null);
+        $averageSpeedKph = $this->calculateAverageSpeedKph($tripDistanceKm, $actualMinutes, $actualScooterOnSeconds);
 
         Log::info('Ride IoT trip capture', [
             'ride_id' => $ride->id,
             'ride_number' => $ride->ride_number,
             'raw_iot_distance_km' => $input['iot_distance_km'] ?? null,
             'trip_distance_km' => $tripDistanceKm,
+            'raw_actual_scooter_on_seconds' => $input['actual_scooter_on_seconds'] ?? null,
+            'actual_scooter_on_seconds' => $actualScooterOnSeconds,
         ]);
 
         $ride->update([
             'end_time' => $endTime,
             'actual_minutes' => $actualMinutes,
             'trip_distance_km' => $tripDistanceKm,
-            'average_speed_kph' => $this->calculateAverageSpeedKph($tripDistanceKm, $actualMinutes),
+            'average_speed_kph' => $averageSpeedKph,
             'complete_battery_percent' => $this->validatedBatteryPercent($input['iot_battery_percent'] ?? null),
+            'actual_scooter_on_seconds' => $actualScooterOnSeconds,
             'charge' => $charge,
             'status' => 'finished',
         ]);
@@ -1052,9 +1086,17 @@ class RideFlowController extends Controller
         return round(max(0, (float) $value), 3);
     }
 
-    protected function calculateAverageSpeedKph(?float $tripDistanceKm, int $actualMinutes): ?float
+    protected function calculateAverageSpeedKph(?float $tripDistanceKm, int $actualMinutes, ?int $actualScooterOnSeconds = null): ?float
     {
-        if ($tripDistanceKm === null || $actualMinutes <= 0) {
+        if ($tripDistanceKm === null) {
+            return null;
+        }
+
+        if ($actualScooterOnSeconds !== null && $actualScooterOnSeconds > 0) {
+            return round($tripDistanceKm / ($actualScooterOnSeconds / 3600), 2);
+        }
+
+        if ($actualMinutes <= 0) {
             return null;
         }
 
@@ -1068,6 +1110,19 @@ class RideFlowController extends Controller
         }
 
         return min(100, max(0, (int) round((float) $value)));
+    }
+
+    protected function validatedActualScooterOnSeconds($value): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (!is_numeric($value)) {
+            return null;
+        }
+
+        return max(0, (int) round((float) $value));
     }
 
     protected function bookingReadyForPayment(Collection $rides): bool

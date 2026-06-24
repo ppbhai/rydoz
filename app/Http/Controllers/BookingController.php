@@ -229,6 +229,7 @@ class BookingController extends Controller
                     'Vehicle ID',
                     'Assign Ride Time',
                     'Actual Time',
+                    'Actual Scooter On Time',
                     'Battery Percentage When Assign',
                     'Battery Percentage When Complete',
                     'Used Battery',
@@ -244,6 +245,7 @@ class BookingController extends Controller
                     'Vehicles',
                     'Vehicle ID',
                     'Actual Time',
+                    'Actual Scooter On Time',
                     'Total KM',
                     'Average Speed',
                     'Document Type',
@@ -285,6 +287,7 @@ class BookingController extends Controller
                             $ride->ride_number ?: '-',
                             $ride->start_time?->format('Y-m-d H:i:s') ?: '-',
                             $ride->actual_minutes ? $ride->actual_minutes . ' min' : '-',
+                            $this->formatActualScooterOnTime($ride->actual_scooter_on_seconds),
                             $ride->assign_battery_percent !== null ? $ride->assign_battery_percent . '%' : '-',
                             $ride->complete_battery_percent !== null ? $ride->complete_battery_percent . '%' : '-',
                             $usedBattery !== null ? $usedBattery . '%' : '-',
@@ -317,6 +320,10 @@ class BookingController extends Controller
                     ->map(fn ($ride) => $ride->actual_minutes ? $ride->actual_minutes . ' min' : '-')
                     ->implode(', ');
 
+                $actualScooterOnTimes = $booking->rides
+                    ->map(fn ($ride) => $this->formatActualScooterOnTime($ride->actual_scooter_on_seconds))
+                    ->implode(', ');
+
                 $tripDistances = $booking->rides
                     ->map(fn ($ride) => $ride->trip_distance_km !== null ? number_format((float) $ride->trip_distance_km, 3, '.', '') . ' km' : '-')
                     ->implode(', ');
@@ -341,6 +348,7 @@ class BookingController extends Controller
                     $vehicleSummary,
                     $rideNumbers,
                     $actualTimes,
+                    $actualScooterOnTimes,
                     $tripDistances,
                     $averageSpeeds,
                     $booking->document_type ?: 'Not selected',
@@ -438,5 +446,14 @@ class BookingController extends Controller
             ->implode(', ');
 
         return $rideReasons ?: ($booking->discount_reason ?: '-');
+    }
+
+    protected function formatActualScooterOnTime($seconds): string
+    {
+        if ($seconds === null || $seconds === '') {
+            return '-';
+        }
+
+        return gmdate('H:i:s', max(0, (int) $seconds));
     }
 }

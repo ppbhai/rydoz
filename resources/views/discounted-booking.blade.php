@@ -52,6 +52,7 @@
                                     <th>Mobile</th>
                                     <th>Vehicles</th>
                                     <th>Actual Time</th>
+                                    <th>Actual Scooter On Time</th>
                                     <th>Total</th>
                                     <th>Discount</th>
                                     <th>Discount Reason</th>
@@ -76,6 +77,11 @@
                                         <td>
                                             @foreach ($booking->rides as $ride)
                                                 <div>{{ $ride->actual_minutes ? $ride->actual_minutes . ' min' : '-' }}</div>
+                                            @endforeach
+                                        </td>
+                                        <td>
+                                            @foreach ($booking->rides as $ride)
+                                                <div>{{ $ride->actual_scooter_on_seconds !== null ? gmdate('H:i:s', (int) $ride->actual_scooter_on_seconds) : '-' }}</div>
                                             @endforeach
                                         </td>
                                         <td>{{ number_format($booking->total_amount, 0) }}</td>

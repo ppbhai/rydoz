@@ -24,6 +24,7 @@ class BookingRide extends Model
         'average_speed_kph',
         'assign_battery_percent',
         'complete_battery_percent',
+        'actual_scooter_on_seconds',
         'charge',
         'discount_reason',
         'discount_amount',
@@ -41,6 +42,7 @@ class BookingRide extends Model
             'average_speed_kph' => 'decimal:2',
             'assign_battery_percent' => 'integer',
             'complete_battery_percent' => 'integer',
+            'actual_scooter_on_seconds' => 'integer',
             'discount_amount' => 'decimal:2',
             'final_charge' => 'decimal:2',
         ];

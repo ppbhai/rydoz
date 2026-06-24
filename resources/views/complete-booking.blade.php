@@ -56,6 +56,7 @@
                                     <th>Vehicle ID</th>
                                     <th>Assign Ride Time</th>
                                     <th>Actual Time</th>
+                                    <th>Actual Scooter On Time</th>
                                     <th>Battery % Assign</th>
                                     <th>Battery % Complete</th>
                                     <th>Used Battery</th>
@@ -88,6 +89,7 @@
                                             <td>{{ $ride->ride_number ?: '-' }}</td>
                                             <td>{{ $ride->start_time ? $ride->start_time->format('d M Y h:i A') : '-' }}</td>
                                             <td>{{ $ride->actual_minutes ? $ride->actual_minutes . ' min' : '-' }}</td>
+                                            <td>{{ $ride->actual_scooter_on_seconds !== null ? gmdate('H:i:s', (int) $ride->actual_scooter_on_seconds) : '-' }}</td>
                                             <td>{{ $ride->assign_battery_percent !== null ? $ride->assign_battery_percent . '%' : '-' }}</td>
                                             <td>{{ $ride->complete_battery_percent !== null ? $ride->complete_battery_percent . '%' : '-' }}</td>
                                             <td>{{ $usedBattery !== null ? $usedBattery . '%' : '-' }}</td>

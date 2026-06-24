@@ -38,6 +38,7 @@ const bool USE_POWER_RELAY_CONTROL = true; // GPIO26 controls the MOSFET on the 
 const uint32_t FREE_TRIAL_LIMIT_MS = 60000;
 const uint32_t FREE_TRIAL_DISTANCE_GRACE_MS = 5000;
 const float FREE_TRIAL_LIMIT_KM = 0.100f;
+const bool DEBUG_SCOOTER_ON_SENSE = true; // Set false after GPIO33 testing is complete.
 
 volatile uint32_t hallPulses = 0;
 volatile uint32_t lastHallMicros = 0;
@@ -56,6 +57,7 @@ uint32_t lastScooterSenseDebugMs = 0;
 uint32_t rideStartMs = 0;
 uint32_t actualScooterOnSeconds = 0;
 uint32_t lastPulseSnapshot = 0;
+uint32_t lastScooterSenseMonitorMs = 0;
 float speedKph = 0.0f;
 bool freeTrialActive = false;
 uint32_t freeTrialStartMs = 0;
@@ -214,6 +216,23 @@ bool scooterOutputIsOnStable()
     }
 
     return highCount >= 3;
+}
+
+void printScooterSenseMonitor()
+{
+    if (!DEBUG_SCOOTER_ON_SENSE || millis() - lastScooterSenseMonitorMs < 1000) {
+        return;
+    }
+
+    lastScooterSenseMonitorMs = millis();
+
+    Serial.printf(
+        "GPIO33 sense raw=%d stable=%s rideActive=%s scooterOutputWasOn=%s actualSeconds=%lu\n",
+        digitalRead(SCOOTER_ON_SENSE_PIN),
+        scooterOutputIsOnStable() ? "HIGH" : "LOW",
+        rideActive ? "true" : "false",
+        scooterOutputWasOn ? "true" : "false",
+        (unsigned long)scooterOnSeconds());
 }
 
 void scooterOn()
@@ -562,7 +581,7 @@ void setup()
     pinMode(ESP_POWER_HOLD_PIN, OUTPUT);
     pinMode(HALL_PIN, INPUT_PULLUP);
     pinMode(CHARGER_SENSE_PIN, INPUT);
-    pinMode(SCOOTER_ON_SENSE_PIN, INPUT_PULLDOWN);
+    pinMode(SCOOTER_ON_SENSE_PIN, INPUT); // External 22k divider resistor already pulls this pin LOW.
 
     digitalWrite(POWER_RELAY_PIN, LOW);
     digitalWrite(BUTTON_OPTO_PIN, LOW);
@@ -578,6 +597,7 @@ void setup()
 void loop()
 {
     updateFreeTrialAutoStop();
+    printScooterSenseMonitor();
 
     if (millis() - lastTelemetryMs >= 1000) {
         lastTelemetryMs = millis();
