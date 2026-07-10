@@ -18,6 +18,13 @@
                     </button>
                 </div>
 
+                <select class="form-select mb-3" data-nearby-vehicle-filter>
+                    <option value="">All vehicles</option>
+                    @foreach ($vehicles as $vehicle)
+                        <option value="{{ $vehicle->name }}">{{ $vehicle->name }}</option>
+                    @endforeach
+                </select>
+
                 <div class="scanner-field mb-3">
                     <div class="search-input-wrap flex-grow-1">
                         <i class="fas fa-search search-input-icon"></i>
@@ -44,6 +51,7 @@
             const retryButton = document.querySelector('[data-nearby-scan-retry]');
             const message = document.querySelector('[data-nearby-scooter-empty]');
             const nearbySearch = document.querySelector('[data-nearby-scooter-search]');
+            const vehicleFilter = document.querySelector('[data-nearby-vehicle-filter]');
 
             function refreshNearbyScooters() {
                 if (!message) {
@@ -77,6 +85,9 @@
             }
 
             nearbySearch?.addEventListener('input', () => {
+                window.ScooterIot?.renderNearbyScooters?.();
+            });
+            vehicleFilter?.addEventListener('change', () => {
                 window.ScooterIot?.renderNearbyScooters?.();
             });
 

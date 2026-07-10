@@ -14,6 +14,13 @@
                     <h2 class="panel-title mb-0">Assigned Scooters - 24 Hours</h2>
                 </div>
 
+                <select class="form-select mb-3" data-assigned-vehicle-filter>
+                    <option value="">All vehicles</option>
+                    @foreach ($vehicles as $vehicle)
+                        <option value="{{ $vehicle->id }}">{{ $vehicle->name }}</option>
+                    @endforeach
+                </select>
+
                 <div class="scanner-field mb-3">
                     <div class="search-input-wrap flex-grow-1">
                         <i class="fas fa-search search-input-icon"></i>
@@ -29,6 +36,7 @@
                 <div class="nearby-scooter-list" data-assigned-scooter-list>
                     @forelse ($assignedScooters as $scooter)
                         <div class="nearby-scooter-row" data-assigned-scooter-row
+                            data-vehicle-id="{{ $scooter->branch_vehicle_id }}"
                             data-search-text="{{ strtolower($scooter->ride_number . ' ' . $scooter->usage_status) }}">
                             <strong>{{ $scooter->ride_number }}</strong>
                             <div class="d-flex align-items-center gap-5">
@@ -54,14 +62,22 @@
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const assignedSearch = document.querySelector('[data-assigned-scooter-search]');
+            const vehicleFilter = document.querySelector('[data-assigned-vehicle-filter]');
 
-            assignedSearch?.addEventListener('input', (event) => {
-                const term = event.target.value.trim().toLowerCase();
+            function filterAssignedScooters() {
+                const term = (assignedSearch?.value || '').trim().toLowerCase();
+                const vehicleId = vehicleFilter?.value || '';
 
                 document.querySelectorAll('[data-assigned-scooter-row]').forEach((row) => {
-                    row.classList.toggle('d-none', term !== '' && !(row.dataset.searchText || '').includes(term));
+                    const matchesSearch = term === '' || (row.dataset.searchText || '').includes(term);
+                    const matchesVehicle = vehicleId === '' || row.dataset.vehicleId === vehicleId;
+
+                    row.classList.toggle('d-none', !matchesSearch || !matchesVehicle);
                 });
-            });
+            }
+
+            assignedSearch?.addEventListener('input', filterAssignedScooters);
+            vehicleFilter?.addEventListener('change', filterAssignedScooters);
         });
     </script>
 </body>

@@ -73,15 +73,15 @@
                     <div class="stack-sm">
                         @forelse ($vehicles as $vehicle)
                             <div class="vehicle-option" data-vehicle-card data-id="{{ $vehicle->id }}"
-                                style="display: flex; justify-content:space-between; align-items:center">
+                                style="display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items:center">
                                 <button type="button"
-                                    class="btn btn-light-theme w-50 vehicle-select-btn d-flex align-items-center justify-content-between"
+                                    class="btn btn-light-theme vehicle-select-btn d-flex align-items-center justify-content-between"
                                     data-vehicle-toggle>
                                     <span class="fw-semibold">{{ $vehicle->name }}</span>
                                 </button>
-                                <div class="mt-2 d-none" data-qty-wrap>
-                                    <select class="form-select form-select-sm" data-qty-select>
-                                        @for ($qty = 1; $qty <= max(1, (int) $vehicle->quantity); $qty++)
+                                <div class="d-none" data-qty-wrap style="width: 82px;">
+                                    <select class="form-select form-select-sm" data-qty-select aria-label="{{ $vehicle->name }} quantity">
+                                        @for ($qty = 1; $qty <= min(9, max(1, (int) $vehicle->quantity)); $qty++)
                                             <option value="{{ $qty }}" @selected($qty === 1)>
                                                 {{ $qty }}</option>
                                         @endfor

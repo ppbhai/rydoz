@@ -90,7 +90,7 @@
                     <div class="row g-3">
                         <div class="col-md-6 col-xl">
                             <div class="border rounded p-3 h-100">
-                                <h6 class="text-muted mb-2">Total Scooter</h6>
+                                <h6 class="text-muted mb-2">Total</h6>
                                 <h3 class="mb-0" data-live-stat="total_scooters">{{ number_format($liveDashboardStats['total_scooters']) }}</h3>
                             </div>
                         </div>
@@ -102,25 +102,25 @@
                         </div>
                         <div class="col-md-6 col-xl">
                             <div class="border rounded p-3 h-100">
-                                <h6 class="text-muted mb-2">Available Scooter</h6>
+                                <h6 class="text-muted mb-2">Available</h6>
                                 <h3 class="mb-0" data-live-stat="available_scooters">{{ number_format($liveDashboardStats['available_scooters']) }}</h3>
                             </div>
                         </div>
                         <div class="col-md-6 col-xl">
                             <div class="border rounded p-3 h-100">
-                                <h6 class="text-muted mb-2">Offline Scooter</h6>
+                                <h6 class="text-muted mb-2">Offline</h6>
                                 <h3 class="mb-0" data-live-stat="offline_scooters">{{ number_format($liveDashboardStats['offline_scooters']) }}</h3>
                             </div>
                         </div>
                         <div class="col-md-6 col-xl">
                             <div class="border rounded p-3 h-100">
-                                <h6 class="text-muted mb-2">Online Scooter</h6>
+                                <h6 class="text-muted mb-2">Online</h6>
                                 <h3 class="mb-0" data-live-stat="online_scooters">{{ number_format($liveDashboardStats['online_scooters']) }}</h3>
                             </div>
                         </div>
                         <div class="col-md-6 col-xl">
                             <div class="border rounded p-3 h-100">
-                                <h6 class="text-muted mb-2">Low Battery Scooter</h6>
+                                <h6 class="text-muted mb-2">Low Battery</h6>
                                 <h3 class="mb-0" data-live-stat="low_battery_scooters">{{ number_format($liveDashboardStats['low_battery_scooters']) }}</h3>
                             </div>
                         </div>
@@ -130,7 +130,7 @@
                         <table class="table table-bordered align-middle mb-0">
                             <thead>
                                 <tr>
-                                    <th>Scooter Name</th>
+                                    <th>Name</th>
                                     <th>Battery</th>
                                     <th>Status</th>
                                     <th>Assigned Ride Count (24 Hours)</th>

@@ -38,6 +38,7 @@ const bool USE_POWER_RELAY_CONTROL = true; // GPIO26 controls the MOSFET on the 
 const uint32_t FREE_TRIAL_LIMIT_MS = 60000;
 const uint32_t FREE_TRIAL_DISTANCE_GRACE_MS = 5000;
 const float FREE_TRIAL_LIMIT_KM = 0.100f;
+const uint8_t MIN_START_BATTERY_PERCENT = 10;
 const bool DEBUG_SCOOTER_ON_SENSE = true; // Set false after GPIO33 testing is complete.
 
 volatile uint32_t hallPulses = 0;
@@ -109,6 +110,23 @@ uint8_t voltageToPercent(float voltage)
 bool chargerIsConnected()
 {
     return digitalRead(CHARGER_SENSE_PIN) == HIGH;
+}
+
+bool startBatteryAllowed()
+{
+    const float voltage = readScooterVoltage();
+    const uint8_t batteryPercent = voltageToPercent(voltage);
+
+    if (batteryPercent <= MIN_START_BATTERY_PERCENT) {
+        Serial.printf(
+            "START blocked: battery too low (%u%%, %.2fV). Minimum required is %u%%.\n",
+            batteryPercent,
+            voltage,
+            MIN_START_BATTERY_PERCENT);
+        return false;
+    }
+
+    return true;
 }
 
 void updateNearbyAdvertisement()
@@ -388,12 +406,15 @@ void scooterOff()
 
     if (USE_POWER_RELAY_CONTROL) {
         digitalWrite(POWER_RELAY_PIN, LOW);
+        delay(100);
         rideActive = false;
         scooterOutputWasOn = false;
         scooterSenseConfirmedOn = false;
 
         Serial.printf(
-            "STOP completed: MOSFET output OFF, stored actual on time=%lu seconds\n",
+            "STOP completed: MOSFET output OFF, GPIO26=%d, sense=%s, stored actual on time=%lu seconds\n",
+            digitalRead(POWER_RELAY_PIN),
+            scooterOutputIsOnStable() ? "HIGH" : "LOW",
             (unsigned long)actualScooterOnSeconds);
         return;
     }
@@ -511,8 +532,16 @@ class CommandCallbacks : public NimBLECharacteristicCallbacks
         Serial.println(command);
 
         if (command == "START") {
+            if (!startBatteryAllowed()) {
+                sendTelemetry();
+                return;
+            }
             scooterOn();
         } else if (command == "START_TRIAL") {
+            if (!startBatteryAllowed()) {
+                sendTelemetry();
+                return;
+            }
             startFreeTrial();
         } else if (command == "STOP") {
             scooterOff();

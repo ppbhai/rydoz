@@ -74,7 +74,12 @@ class RideFlowController extends Controller
     {
         $this->ensureUserLoggedIn();
 
-        return view('theme.scooter-batteries');
+        $branch = $this->currentBranch();
+        abort_unless($branch, 403);
+
+        $vehicles = $this->branchVehicles($branch);
+
+        return view('theme.scooter-batteries', compact('vehicles'));
     }
 
     public function scooterUsage()
@@ -85,12 +90,12 @@ class RideFlowController extends Controller
         abort_unless($branch, 403);
 
         $assignedScooters = BookingRide::query()
-            ->selectRaw('ride_number, count(*) as assign_count, max(start_time) as last_assigned_at')
+            ->selectRaw('branch_vehicle_id, vehicle_name, ride_number, count(*) as assign_count, max(start_time) as last_assigned_at')
             ->whereNotNull('ride_number')
             ->where('ride_number', '!=', '')
             ->where('start_time', '>=', now()->subDay())
             ->whereHas('booking', fn ($query) => $query->where('branch_id', $branch->id))
-            ->groupBy('ride_number')
+            ->groupBy('branch_vehicle_id', 'vehicle_name', 'ride_number')
             ->orderByDesc('assign_count')
             ->orderBy('ride_number')
             ->get();
@@ -108,7 +113,9 @@ class RideFlowController extends Controller
             $scooter->usage_status = $ongoingScooters->has($scooter->ride_number) ? 'ongoing' : 'available';
         });
 
-        return view('theme.scooter-usage', compact('assignedScooters'));
+        $vehicles = $this->branchVehicles($branch);
+
+        return view('theme.scooter-usage', compact('assignedScooters', 'vehicles'));
     }
 
     public function freeTrial()
