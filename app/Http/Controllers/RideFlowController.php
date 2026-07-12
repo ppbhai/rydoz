@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\BlacklistReason;
 use App\Models\Booking;
 use App\Models\BookingRide;
 use App\Models\Branch;
@@ -204,9 +205,18 @@ class RideFlowController extends Controller
             ->latest('id')
             ->first();
 
+        $blacklistedBooking = Booking::query()
+            ->where('mobile', $request->mobile)
+            ->whereNotNull('blacklist_reason')
+            ->where('blacklist_reason', '!=', '')
+            ->latest('id')
+            ->first();
+
         return response()->json([
             'status' => true,
             'name' => $customer?->name,
+            'blacklisted' => (bool) $blacklistedBooking,
+            'blacklist_reason' => $blacklistedBooking?->blacklist_reason,
         ]);
     }
 
@@ -769,6 +779,11 @@ class RideFlowController extends Controller
             ->orderBy('reason')
             ->get();
 
+        $blacklistReasons = BlacklistReason::query()
+            ->where('is_active', true)
+            ->orderBy('reason')
+            ->get();
+
         $payableRides = $booking->rides->where('status', 'finished')->values();
 
         $rideCountSummary = $payableRides
@@ -785,6 +800,7 @@ class RideFlowController extends Controller
             'booking',
             'payableRides',
             'discountReasons',
+            'blacklistReasons',
             'rideCountSummary',
             'subtotal',
             'totalDiscount',
@@ -806,7 +822,9 @@ class RideFlowController extends Controller
             'discount_ride_id' => ['nullable', 'integer'],
             'discount_reason_id' => ['nullable', 'exists:discount_reasons,id'],
             'discount_amount' => ['nullable', 'numeric', 'min:0'],
+            'blacklist_reason_id' => ['nullable', 'exists:blacklist_reasons,id'],
             'payment_method' => ['required', 'in:cash,online'],
+            'blacklist_reason' => ['nullable'],
         ]);
 
         $payableRides = $booking->rides->where('status', 'finished')->values();
@@ -817,6 +835,7 @@ class RideFlowController extends Controller
         $discountRide = $selectedRideId ? $payableRides->firstWhere('id', $selectedRideId) : null;
         $requestedDiscount = (float) ($validated['discount_amount'] ?? 0);
         $hasDiscountInput = $selectedRideId > 0 || !is_null($reasonId) || $requestedDiscount > 0;
+        $blacklistReason = $validated['blacklist_reason'] ?? null;
 
         if ($selectedRideId && !$discountRide) {
             return back()->with('error', 'Selected discount ride is invalid.');
@@ -858,6 +877,7 @@ class RideFlowController extends Controller
         $resolvedStatus = $this->resolveBookingStatus($booking->rides);
         $booking->update([
             'discount_reason' => $resolvedStatus === 'completed' ? null : $booking->discount_reason,
+            'blacklist_reason' => $blacklistReason ?? null,
             'discount_amount' => (float) $booking->rides->sum('discount_amount'),
             'total_amount' => (float) $booking->rides->sum('charge'),
             'final_amount' => (float) $booking->rides->sum(fn (BookingRide $item) => $item->final_charge ?? $item->charge),

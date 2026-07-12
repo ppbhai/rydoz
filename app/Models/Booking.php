@@ -19,6 +19,7 @@ class Booking extends Model
         'back_image',
         'status',
         'discount_reason',
+        'blacklist_reason',
         'discount_amount',
         'total_amount',
         'final_amount',

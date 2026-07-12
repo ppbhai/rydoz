@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\BranchController;
 use App\Http\Controllers\BlogController;
+use App\Http\Controllers\BlacklistReasonController;
 use App\Http\Controllers\DiscountReasonController;
 use App\Http\Controllers\LoginController;
 use App\Http\Controllers\RideFlowController;
@@ -96,6 +97,13 @@ Route::post('/discount-reasons', [DiscountReasonController::class, 'store'])->na
 Route::get('/discount-reasons/{discountReason}/edit', [DiscountReasonController::class, 'edit'])->name('discount-reasons.edit');
 Route::post('/discount-reasons/{discountReason}', [DiscountReasonController::class, 'update'])->name('discount-reasons.update');
 Route::get('/discount-reasons/{discountReason}/delete', [DiscountReasonController::class, 'destroy'])->name('discount-reasons.destroy');
+
+/////////////////////////////////////// blacklist reasons ///////////////////////////
+Route::get('/blacklist-reasons', [BlacklistReasonController::class, 'index'])->name('blacklist-reasons.index');
+Route::post('/blacklist-reasons', [BlacklistReasonController::class, 'store'])->name('blacklist-reasons.store');
+Route::get('/blacklist-reasons/{blacklistReason}/edit', [BlacklistReasonController::class, 'edit'])->name('blacklist-reasons.edit');
+Route::post('/blacklist-reasons/{blacklistReason}', [BlacklistReasonController::class, 'update'])->name('blacklist-reasons.update');
+Route::get('/blacklist-reasons/{blacklistReason}/delete', [BlacklistReasonController::class, 'destroy'])->name('blacklist-reasons.destroy');
 
 /////////////////////////////////////// Testimonials ///////////////////////////
 Route::get('/blogcategoryshow', [BlogController::class, 'blogcategoryshow'])->name('blogcategoryshow');

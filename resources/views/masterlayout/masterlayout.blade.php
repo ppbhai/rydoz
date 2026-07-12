@@ -239,6 +239,13 @@
                             </a>
                         </li>
 
+                        <li>
+                            <a href="{{ route('blacklist-reasons.index') }}">
+                               <i data-feather="user-x"></i>
+                                <span> Blacklist Reasons </span>
+                            </a>
+                        </li>
+
                         {{-- Booking --}}
                         <li>
                             <a href="#bookingMenu" data-bs-toggle="collapse" aria-expanded="false">

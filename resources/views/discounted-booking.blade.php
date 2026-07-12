@@ -46,62 +46,61 @@
                         <table id="datatable" class="table table-bordered dt-responsive nowrap">
                             <thead>
                                 <tr>
-                                    <th>#</th>
+                                    <th>No.</th>
                                     <th>Branch</th>
+                                    <th>Booking ID</th>
+                                    <th>Date</th>
                                     <th>Name</th>
-                                    <th>Mobile</th>
-                                    <th>Vehicles</th>
+                                    <th>Mobile No.</th>
+                                    <th>Vehicle</th>
+                                    <th>Vehicle ID</th>
+                                    <th>Assign Ride Time</th>
                                     <th>Actual Time</th>
                                     <th>Actual Scooter On Time</th>
-                                    <th>Total</th>
+                                    <th>Battery % Assign</th>
+                                    <th>Battery % Complete</th>
+                                    <th>Used Battery</th>
+                                    <th>Total KM</th>
+                                    <th>Average Speed</th>
+                                    <th>Total Amount</th>
                                     <th>Discount</th>
-                                    <th>Discount Reason</th>
-                                    <th>Final</th>
-                                    <th>Payment</th>
-                                    <th>Paid At</th>
-                                    <th>Created</th>
+                                    <th>Final Payment</th>
+                                    <th>Payment Method</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                @foreach ($bookings as $index => $booking)
-                                    <tr>
-                                        <td>{{ $index + 1 }}</td>
-                                        <td>{{ $booking->branchRelation?->name ?: $booking->branch_name ?: $booking->branch ?: '-' }}</td>
-                                        <td>{{ $booking->name }}</td>
-                                        <td>{{ $booking->mobile }}</td>
-                                        <td>
-                                            @foreach ($booking->rides as $ride)
-                                                <div>{{ $ride->vehicle_name }} x 1</div>
-                                            @endforeach
-                                        </td>
-                                        <td>
-                                            @foreach ($booking->rides as $ride)
-                                                <div>{{ $ride->actual_minutes ? $ride->actual_minutes . ' min' : '-' }}</div>
-                                            @endforeach
-                                        </td>
-                                        <td>
-                                            @foreach ($booking->rides as $ride)
-                                                <div>{{ $ride->actual_scooter_on_seconds !== null ? gmdate('H:i:s', (int) $ride->actual_scooter_on_seconds) : '-' }}</div>
-                                            @endforeach
-                                        </td>
-                                        <td>{{ number_format($booking->total_amount, 0) }}</td>
-                                        <td>{{ number_format($booking->discount_amount, 0) }}</td>
-                                        <td>
-                                            @php
-                                                $discountReasons = $booking->rides
-                                                    ->filter(fn ($ride) => (float) $ride->discount_amount > 0 && filled($ride->discount_reason))
-                                                    ->pluck('discount_reason')
-                                                    ->unique()
-                                                    ->values()
-                                                    ->implode(', ');
-                                            @endphp
-                                            {{ $discountReasons ?: ($booking->discount_reason ?: '-') }}
-                                        </td>
-                                        <td>{{ number_format($booking->final_amount, 0) }}</td>
-                                        <td>{{ $booking->payment_method ?: '-' }}</td>
-                                        <td>{{ $booking->paid_at?->format('d M Y h:i A') }}</td>
-                                        <td>{{ $booking->created_at?->format('d M Y h:i A') }}</td>
-                                    </tr>
+                                @php $rowNumber = 1; @endphp
+                                @foreach ($bookings as $booking)
+                                    @foreach ($booking->rides as $ride)
+                                        @php
+                                            $rideFinalAmount = (float) ($ride->final_charge ?: $ride->charge);
+                                            $usedBattery = $ride->assign_battery_percent !== null && $ride->complete_battery_percent !== null
+                                                ? max(0, (int) $ride->assign_battery_percent - (int) $ride->complete_battery_percent)
+                                                : null;
+                                        @endphp
+                                        <tr>
+                                            <td>{{ $rowNumber++ }}</td>
+                                            <td>{{ $booking->branchRelation?->name ?: $booking->branch_name ?: $booking->branch ?: '-' }}</td>
+                                            <td>{{ $booking->id }}</td>
+                                            <td>{{ ($booking->paid_at ?: $booking->created_at)?->format('d M Y h:i A') }}</td>
+                                            <td>{{ $booking->name }}</td>
+                                            <td>{{ $booking->mobile }}</td>
+                                            <td>{{ $ride->vehicle_name ?: '-' }}</td>
+                                            <td>{{ $ride->ride_number ?: '-' }}</td>
+                                            <td>{{ $ride->start_time ? $ride->start_time->format('d M Y h:i A') : '-' }}</td>
+                                            <td>{{ $ride->actual_minutes ? $ride->actual_minutes . ' min' : '-' }}</td>
+                                            <td>{{ $ride->actual_scooter_on_seconds !== null ? gmdate('H:i:s', (int) $ride->actual_scooter_on_seconds) : '-' }}</td>
+                                            <td>{{ $ride->assign_battery_percent !== null ? $ride->assign_battery_percent . '%' : '-' }}</td>
+                                            <td>{{ $ride->complete_battery_percent !== null ? $ride->complete_battery_percent . '%' : '-' }}</td>
+                                            <td>{{ $usedBattery !== null ? $usedBattery . '%' : '-' }}</td>
+                                            <td>{{ $ride->trip_distance_km !== null ? number_format((float) $ride->trip_distance_km, 3) . ' km' : '-' }}</td>
+                                            <td>{{ $ride->average_speed_kph !== null ? number_format((float) $ride->average_speed_kph, 2) . ' km/h' : '-' }}</td>
+                                            <td>{{ number_format($ride->charge, 0) }}</td>
+                                            <td>{{ number_format($ride->discount_amount, 0) }}</td>
+                                            <td>{{ number_format($rideFinalAmount, 0) }}</td>
+                                            <td>{{ $booking->payment_method ?: '-' }}</td>
+                                        </tr>
+                                    @endforeach
                                 @endforeach
                             </tbody>
                         </table>

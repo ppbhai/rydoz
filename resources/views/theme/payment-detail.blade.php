@@ -65,10 +65,12 @@
                         </div>
                         <div class="assign-times" style="display:flex; flex-direction:column; gap:6px;">
                             <span style="font-weight: normal">Start time:
-                                <strong style="font-weight: normal">{{ $ride->start_time ? $ride->start_time->format('h:i A') : '-' }}</strong></span>
+                                <strong
+                                    style="font-weight: normal">{{ $ride->start_time ? $ride->start_time->format('h:i A') : '-' }}</strong></span>
                             <div style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;">
                                 <span style="font-weight: normal">End time:
-                                    <strong style="font-weight: normal">{{ $ride->end_time ? $ride->end_time->format('h:i A') : '-' }}</strong></span>
+                                    <strong
+                                        style="font-weight: normal">{{ $ride->end_time ? $ride->end_time->format('h:i A') : '-' }}</strong></span>
                                 <span><strong
                                         style="color:black; font-weight:bold">{{ number_format((float) $ride->charge, 0) }}/-</strong></span>
                             </div>
@@ -94,7 +96,8 @@
                                 <select class="form-select" name="discount_reason_id" id="discountReasonSelect">
                                     <option value="">Dis. Reason</option>
                                     @foreach ($discountReasons as $reason)
-                                        <option value="{{ $reason->id }}" @selected(old('discount_reason_id') == $reason->id)>{{ $reason->reason }}</option>
+                                        <option value="{{ $reason->id }}" @selected(old('discount_reason_id') == $reason->id)>
+                                            {{ $reason->reason }}</option>
                                     @endforeach
                                 </select>
                             </div>
@@ -104,6 +107,15 @@
                                 value="{{ old('discount_amount') }}" placeholder="Discount Amount" min="0"
                                 step="0.01" disabled>
                         </div>
+                        <div>
+                            <select class="form-select" name="blacklist_reason" id="blacklistreasonReasonSelect">
+                                <option value="">Blacklist Reason</option>
+                                @foreach ($blacklistReasons as $b_reason)
+                                    <option value="{{ $b_reason->id }}" @selected(old('blacklist_reason') == $b_reason->id)>
+                                        {{ $b_reason->reason }}</option>
+                                @endforeach
+                            </select>
+                        </div>
                     </div>
                 </div>
 
@@ -111,7 +123,8 @@
                     <div class="mini-stat">
                         <div class="detail-row">
                             <strong style="font-size: 20px;">Total Payment</strong>
-                            <strong><span id="finalTotalText" style="font-size: 20px; color:#FE5100">{{ number_format($subtotal, 0) }}/-</span></strong>
+                            <strong><span id="finalTotalText"
+                                    style="font-size: 20px; color:#FE5100">{{ number_format($subtotal, 0) }}/-</span></strong>
                         </div>
                     </div>
                 </div>
@@ -160,9 +173,9 @@
             }
 
             if (discountAmountHelp) {
-                discountAmountHelp.textContent = canEditDiscount
-                    ? `Discount amount cannot be greater than ${Math.round(allowedMax)}.`
-                    : 'Select discount ride and reason to enter amount.';
+                discountAmountHelp.textContent = canEditDiscount ?
+                    `Discount amount cannot be greater than ${Math.round(allowedMax)}.` :
+                    'Select discount ride and reason to enter amount.';
             }
         }
 

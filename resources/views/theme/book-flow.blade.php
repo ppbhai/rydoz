@@ -20,6 +20,9 @@
                         </div>
                         <button type="button" class="btn btn-theme d-none" id="findBtn" style="width: 140px; height:45px">Find</button>
                     </div>
+                    <div id="blacklistNotice" class="d-none"
+                        style="margin-top:8px;color:#dc3545;font-weight:600;font-size:14px;">
+                    </div>
                     <div style="text-align: center">
                         <div class="d-none" style="text-align: left" id="nameWrap">
                             <input type="text" class="form-control" id="name" placeholder="Enter customer name">
@@ -64,6 +67,20 @@
 
             if (data.name) {
                 document.getElementById('name').value = data.name;
+            } else {
+                document.getElementById('name').value = '';
+            }
+
+            const notice = document.getElementById('blacklistNotice');
+
+            if (data.blacklisted) {
+                notice.classList.remove('d-none');
+                notice.innerHTML = `
+                    <strong>⚠ This customer is blacklisted.</strong><br>
+                `;
+            } else {
+                notice.classList.add('d-none');
+                notice.innerHTML = '';
             }
         }
 
