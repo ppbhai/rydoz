@@ -998,6 +998,8 @@
         toastStack.className = 'app-toast-stack';
         document.body.appendChild(toastStack);
 
+        const APP_TOAST_VISIBLE_MS = 6000;
+
         window.showAppToast = (message, type = 'success', delay = 0) => {
             const text = (message || '').trim();
 
@@ -1018,7 +1020,7 @@
                 window.setTimeout(() => {
                     toast.classList.remove('is-visible');
                     window.setTimeout(() => toast.remove(), 260);
-                }, 3000);
+                }, APP_TOAST_VISIBLE_MS);
             }, delay);
         };
 

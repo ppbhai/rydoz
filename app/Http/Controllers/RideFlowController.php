@@ -537,7 +537,13 @@ class RideFlowController extends Controller
             $redirectParams['booking'] = $returnBooking ?: $booking->id;
         }
 
-        return redirect()->route('index', $redirectParams)->with('success', $ride->vehicle_name . ' assigned successfully.');
+        $successMessage = $ride->vehicle_name . ' assigned successfully.';
+
+        if ($ride->assign_battery_percent !== null) {
+            $successMessage .= ' Battery ' . $ride->assign_battery_percent . '%.';
+        }
+
+        return redirect()->route('index', $redirectParams)->with('success', $successMessage);
     }
 
     public function ongoing()
@@ -604,7 +610,7 @@ class RideFlowController extends Controller
             $redirectParams['booking'] = $returnBooking ?: $booking->id;
         }
 
-        return redirect()->route('ongoing', $redirectParams)->with('success', 'Ride completed successfully.');
+        return redirect()->route('ongoing', $redirectParams)->with('success', $this->rideCompletedMessage($ride));
     }
 
     public function finishRideByNumber(Request $request, Booking $booking): RedirectResponse
@@ -675,7 +681,7 @@ class RideFlowController extends Controller
             $redirectParams['booking'] = $returnBooking ?: $booking->id;
         }
 
-        return redirect()->route('ongoing', $redirectParams)->with('success', 'Ride completed successfully.');
+        return redirect()->route('ongoing', $redirectParams)->with('success', $this->rideCompletedMessage($ride));
     }
 
     public function finishBooking(Request $request, Booking $booking): RedirectResponse
@@ -1102,6 +1108,17 @@ class RideFlowController extends Controller
         ]);
 
         return $booking;
+    }
+
+    protected function rideCompletedMessage(BookingRide $ride): string
+    {
+        $message = 'Ride completed successfully.';
+
+        if ($ride->complete_battery_percent !== null) {
+            $message .= ' Battery ' . $ride->complete_battery_percent . '%.';
+        }
+
+        return $message;
     }
 
     protected function validatedTripDistance($value): ?float
