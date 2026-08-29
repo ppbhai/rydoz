@@ -30,10 +30,6 @@
                         data-target-input="assignedScooterSearch" aria-label="Scan scooter search">
                         <i class="fas fa-barcode"></i>
                     </button>
-                    <button type="button" class="btn btn-light-theme scanner-btn" data-assigned-sort-toggle
-                        data-sort-direction="asc" aria-label="Sort by usage">
-                        <i class="fas fa-arrow-down-short-wide" aria-hidden="true"></i>
-                    </button>
                 </div>
 
                 <div class="nearby-scooter-list" data-assigned-scooter-list>
@@ -67,8 +63,6 @@
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const assignedSearch = document.querySelector('[data-assigned-scooter-search]');
-            const list = document.querySelector('[data-assigned-scooter-list]');
-            const sortToggle = document.querySelector('[data-assigned-sort-toggle]');
 
             function filterAssignedScooters() {
                 const term = (assignedSearch?.value || '').trim().toLowerCase();
@@ -83,33 +77,6 @@
                 });
             }
 
-            function reorderAssignedScooters() {
-                if (!list) {
-                    return;
-                }
-
-                const descending = sortToggle?.dataset.sortDirection === 'desc';
-                const rows = Array.from(list.querySelectorAll('[data-assigned-scooter-row]'));
-
-                rows.sort((left, right) => {
-                    const leftOngoing = left.dataset.ongoing === '1' ? 1 : 0;
-                    const rightOngoing = right.dataset.ongoing === '1' ? 1 : 0;
-
-                    // A currently-ongoing scooter can't be handed out right now,
-                    // so it always sinks to the bottom regardless of sort direction.
-                    if (leftOngoing !== rightOngoing) {
-                        return leftOngoing - rightOngoing;
-                    }
-
-                    const leftCount = Number(left.dataset.assignCount || 0);
-                    const rightCount = Number(right.dataset.assignCount || 0);
-
-                    return descending ? rightCount - leftCount : leftCount - rightCount;
-                });
-
-                rows.forEach((row) => list.appendChild(row));
-            }
-
             assignedSearch?.addEventListener('input', filterAssignedScooters);
 
             document.querySelectorAll('[data-vehicle-tab]').forEach((tab) => {
@@ -118,16 +85,6 @@
                     tab.classList.add('is-active');
                     filterAssignedScooters();
                 });
-            });
-
-            sortToggle?.addEventListener('click', () => {
-                const nextDirection = sortToggle.dataset.sortDirection === 'desc' ? 'asc' : 'desc';
-                sortToggle.dataset.sortDirection = nextDirection;
-                sortToggle.setAttribute('aria-label', nextDirection === 'desc' ? 'Sorted most used first' : 'Sorted least used first');
-                const icon = sortToggle.querySelector('i');
-                icon?.classList.toggle('fa-arrow-down-short-wide', nextDirection === 'asc');
-                icon?.classList.toggle('fa-arrow-up-wide-short', nextDirection === 'desc');
-                reorderAssignedScooters();
             });
         });
     </script>
