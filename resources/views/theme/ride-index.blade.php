@@ -6,7 +6,7 @@
         'kicker' => $branch->name,
         'leftUrl' => route('scooter.batteries'),
         'leftIcon' => 'fas fa-battery-three-quarters',
-        'leftLabel' => 'Scooter batteries',
+        'leftLabel' => 'Rydoz Battery',
         'leftExtraUrl' => route('scooter.usage'),
         'leftExtraIcon' => 'fas fa-gauge-high',
         'leftExtraLabel' => 'Scooter usage',

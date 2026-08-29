@@ -1,8 +1,8 @@
-@include('theme.partials.head', ['title' => 'Scooter Batteries'])
+@include('theme.partials.head', ['title' => 'Rydoz Battery'])
 
 <body>
     @include('theme.partials.header', [
-        'title' => 'Scooter Batteries',
+        'title' => 'Rydoz Battery',
         'kicker' => 'Nearby devices',
         'backUrl' => route('index'),
     ])
