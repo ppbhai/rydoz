@@ -706,12 +706,20 @@ class RideFlowController extends Controller
 
         $endTime = now();
 
+        // This form only carries a single set of IoT readings (one scooter's
+        // battery/km/on-time), so it can only be trusted to describe a single
+        // ride. Applying the same reading to every ongoing ride would fabricate
+        // identical telemetry for other scooters when a booking has more than
+        // one ride in progress at once.
+        $applyIotReadings = $ongoingRides->count() === 1;
+        $tripDistanceKm = $applyIotReadings ? $this->validatedTripDistance($request->input('iot_distance_km')) : null;
+        $actualScooterOnSeconds = $applyIotReadings ? $this->validatedActualScooterOnSeconds($request->input('actual_scooter_on_seconds')) : null;
+        $completeBatteryPercent = $applyIotReadings ? $this->validatedBatteryPercent($request->input('iot_battery_percent')) : null;
+
         foreach ($ongoingRides as $ride) {
             $actualMinutes = $this->calculateActualRideMinutes($ride, $endTime);
-        $charge = $this->calculateRideCharge($ride, $actualMinutes, (int) $branch->buffer_time);
-        $tripDistanceKm = $this->validatedTripDistance($request->input('iot_distance_km'));
-        $actualScooterOnSeconds = $this->validatedActualScooterOnSeconds($request->input('actual_scooter_on_seconds'));
-        $averageSpeedKph = $this->calculateAverageSpeedKph($tripDistanceKm, $actualMinutes, $actualScooterOnSeconds);
+            $charge = $this->calculateRideCharge($ride, $actualMinutes, (int) $branch->buffer_time);
+            $averageSpeedKph = $this->calculateAverageSpeedKph($tripDistanceKm, $actualMinutes, $actualScooterOnSeconds);
 
             Log::info('Ride IoT trip capture', [
                 'ride_id' => $ride->id,
@@ -727,7 +735,7 @@ class RideFlowController extends Controller
                 'actual_minutes' => $actualMinutes,
                 'trip_distance_km' => $tripDistanceKm,
                 'average_speed_kph' => $averageSpeedKph,
-                'complete_battery_percent' => $this->validatedBatteryPercent($request->input('iot_battery_percent')),
+                'complete_battery_percent' => $completeBatteryPercent,
                 'actual_scooter_on_seconds' => $actualScooterOnSeconds,
                 'charge' => $charge,
                 'status' => 'finished',
