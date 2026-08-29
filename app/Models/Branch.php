@@ -50,4 +50,9 @@ class Branch extends Model
     {
         return $this->hasOne(BranchLiveStat::class);
     }
+
+    public function freeTrials(): HasMany
+    {
+        return $this->hasMany(FreeTrial::class);
+    }
 }

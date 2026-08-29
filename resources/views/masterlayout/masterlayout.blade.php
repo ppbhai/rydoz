@@ -296,6 +296,15 @@
                         </li>
                         {{-- Payment --}}
 
+                        {{-- Free Trials --}}
+                        <li>
+                            <a href="{{ route('free-trials.index') }}">
+                                <i data-feather="clock"></i>
+                                <span> Free Trials </span>
+                            </a>
+                        </li>
+                        {{-- Free Trials --}}
+
                     </ul>
 
                 </div>

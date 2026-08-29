@@ -82,6 +82,40 @@
                 return latestTelemetry?.active === true || latestTelemetry?.scooterOutputOn === true;
             }
 
+            async function postJson(url, body) {
+                try {
+                    await fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                            'X-CSRF-TOKEN': '{{ csrf_token() }}'
+                        },
+                        body: JSON.stringify(body)
+                    });
+                } catch (error) {
+                    console.warn('Could not record free trial.', error);
+                }
+            }
+
+            function recordFreeTrialAssigned(id) {
+                return postJson('{{ route('free-trial.assign') }}', {
+                    scooter_id: id,
+                    battery_percent: latestTelemetry?.battery,
+                });
+            }
+
+            function recordFreeTrialCompleted(id) {
+                return postJson('{{ route('free-trial.complete') }}', {
+                    scooter_id: id,
+                    distance_km: latestTelemetry?.km,
+                    battery_percent: latestTelemetry?.battery,
+                    actual_scooter_on_seconds: latestTelemetry?.actual_scooter_on_seconds
+                        ?? latestTelemetry?.onSeconds
+                        ?? latestTelemetry?.seconds,
+                });
+            }
+
             function renderButtons() {
                 const connected = scooterId !== '';
 
@@ -148,6 +182,7 @@
                     renderButtons();
 
                     await window.ScooterIot.sendCommand('START_TRIAL');
+                    await recordFreeTrialAssigned(connectedScooterId);
                     await window.ScooterIot.disconnect?.().catch(() => {});
                     clearSelectedScooter('Free trial assigned. Scan next scooter QR.');
                 } catch (error) {
@@ -172,6 +207,7 @@
 
                 try {
                     await window.ScooterIot.sendCommand('STOP');
+                    await recordFreeTrialCompleted(scooterId);
                     latestTelemetry = {
                         ...(latestTelemetry || {}),
                         active: false,

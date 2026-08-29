@@ -135,6 +135,8 @@ Route::get('/discounted-bookings', [BookingController::class, 'discountedBooking
 Route::get('/discounted-bookings/export', [BookingController::class, 'exportDiscountedBookings'])->name('booking.discounted.export');
 Route::get('/payment-report', [BookingController::class, 'paymentReport'])->name('payment.report');
 Route::get('/payment-report/export', [BookingController::class, 'exportPaymentReport'])->name('payment.report.export');
+Route::get('/free-trials', [BookingController::class, 'freeTrialList'])->name('free-trials.index');
+Route::get('/free-trials/export', [BookingController::class, 'exportFreeTrials'])->name('free-trials.export');
 
 ///////////////////////////////   user 
 Route::get('/userlogin', [UserLoginController::class, 'show'])->name('userlogin')->middleware('desktop.redirect');
@@ -163,6 +165,8 @@ Route::get('/scooter-usage', [RideFlowController::class, 'scooterUsage'])
 Route::get('/free-trial', [RideFlowController::class, 'freeTrial'])
     ->name('free-trial')
     ->middleware('desktop.redirect');
+Route::post('/free-trial/assign', [RideFlowController::class, 'assignFreeTrial'])->name('free-trial.assign');
+Route::post('/free-trial/complete', [RideFlowController::class, 'completeFreeTrial'])->name('free-trial.complete');
 Route::get('/book', [RideFlowController::class, 'book'])->name('book')->middleware('desktop.redirect');
 Route::get('/booking-customer', [RideFlowController::class, 'customerLookup'])->name('booking-customer')->middleware('desktop.redirect');
 Route::post('/send-otp', [RideFlowController::class, 'sendOtp'])->name('send-otp');

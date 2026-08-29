@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\Booking;
 use App\Models\Branch;
+use App\Models\BranchVehicle;
+use App\Models\FreeTrial;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -70,6 +72,98 @@ class BookingController extends Controller
             $this->paymentReportData($request),
             'payment-report-' . now()->format('Ymd-His') . '.csv'
         );
+    }
+
+    public function freeTrialList(Request $request)
+    {
+        $freeTrials = $this->freeTrialQuery($request)->get();
+        $branches = Branch::orderBy('name')->get();
+        $vehicleNamesByBranch = $this->vehicleNamesByBranch();
+        $allVehicleNames = $vehicleNamesByBranch->flatten()->unique()->sort()->values();
+
+        return view('free-trials', compact('freeTrials', 'branches', 'vehicleNamesByBranch', 'allVehicleNames'));
+    }
+
+    public function exportFreeTrials(Request $request): StreamedResponse
+    {
+        $freeTrials = $this->freeTrialQuery($request)->get();
+
+        return $this->streamFreeTrialsCsv($freeTrials, 'free-trials-' . now()->format('Ymd-His') . '.csv');
+    }
+
+    protected function freeTrialQuery(Request $request)
+    {
+        return FreeTrial::with('branch')
+            ->when($request->filled('branch_id') && $request->branch_id !== 'all', function ($query) use ($request) {
+                $query->where('branch_id', $request->branch_id);
+            })
+            ->when($request->filled('vehicle_name') && $request->vehicle_name !== 'all', function ($query) use ($request) {
+                $query->where('vehicle_name', $request->vehicle_name);
+            })
+            ->when($request->filled('from_date'), function ($query) use ($request) {
+                $query->whereDate('assigned_at', '>=', $this->limitedReportDate($request->from_date));
+            })
+            ->when($request->filled('to_date'), function ($query) use ($request) {
+                $query->whereDate('assigned_at', '<=', $this->limitedReportDate($request->to_date));
+            })
+            ->latest('assigned_at');
+    }
+
+    /**
+     * Distinct vehicle names per branch, used to populate the vehicle filter
+     * once a branch is chosen (or every vehicle name across branches when
+     * "All branches" is selected).
+     */
+    protected function vehicleNamesByBranch(): \Illuminate\Support\Collection
+    {
+        return BranchVehicle::query()
+            ->orderBy('name')
+            ->get(['branch_id', 'name'])
+            ->groupBy('branch_id')
+            ->map(fn ($vehicles) => $vehicles->pluck('name')->unique()->values());
+    }
+
+    protected function streamFreeTrialsCsv($freeTrials, string $filename): StreamedResponse
+    {
+        return response()->streamDownload(function () use ($freeTrials) {
+            $handle = fopen('php://output', 'w');
+
+            fputcsv($handle, [
+                'No.',
+                'Branch',
+                'Vehicle',
+                'Vehicle ID',
+                'Assigned At',
+                'Completed At',
+                'Duration',
+                'Distance (km)',
+                'Battery % Start',
+                'Battery % End',
+                'Status',
+            ]);
+
+            $rowNumber = 1;
+
+            foreach ($freeTrials as $freeTrial) {
+                fputcsv($handle, [
+                    $rowNumber++,
+                    $freeTrial->branch?->name ?: '-',
+                    $freeTrial->vehicle_name ?: '-',
+                    $freeTrial->scooter_id ?: '-',
+                    $freeTrial->assigned_at?->format('Y-m-d H:i:s') ?: '-',
+                    $freeTrial->completed_at?->format('Y-m-d H:i:s') ?: '-',
+                    $freeTrial->duration_seconds !== null ? gmdate('H:i:s', (int) $freeTrial->duration_seconds) : '-',
+                    $freeTrial->distance_km !== null ? number_format((float) $freeTrial->distance_km, 3, '.', '') : '-',
+                    $freeTrial->battery_percent_start !== null ? $freeTrial->battery_percent_start . '%' : '-',
+                    $freeTrial->battery_percent_end !== null ? $freeTrial->battery_percent_end . '%' : '-',
+                    ucfirst($freeTrial->status),
+                ]);
+            }
+
+            fclose($handle);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+        ]);
     }
 
     protected function paymentReportQuery(Request $request)

@@ -9,6 +9,7 @@ use App\Models\Branch;
 use App\Models\BranchLiveStat;
 use App\Models\BranchVehicle;
 use App\Models\DiscountReason;
+use App\Models\FreeTrial;
 use App\Models\User;
 use App\Services\MsgClubSmsService;
 use Illuminate\Http\JsonResponse;
@@ -133,6 +134,85 @@ class RideFlowController extends Controller
         abort_unless($branch && $branch->free_trial_enabled && $branch->iot_enabled, 403);
 
         return view('theme.free-trial');
+    }
+
+    public function assignFreeTrial(Request $request): JsonResponse
+    {
+        $this->ensureUserLoggedIn();
+
+        $branch = $this->currentBranch();
+        abort_unless($branch && $branch->free_trial_enabled && $branch->iot_enabled, 403);
+
+        $validated = $request->validate([
+            'scooter_id' => ['required', 'string', 'max:100'],
+            'battery_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+        ]);
+
+        $scooterId = $this->normalizeScooterId($validated['scooter_id']);
+        abort_if($scooterId === '', 422);
+
+        $vehicleName = $this->scooterVehicleMap($branch)[$scooterId] ?? null;
+        $branchVehicle = $vehicleName
+            ? BranchVehicle::query()->where('branch_id', $branch->id)->where('name', $vehicleName)->first()
+            : null;
+
+        $freeTrial = FreeTrial::create([
+            'branch_id' => $branch->id,
+            'branch_vehicle_id' => $branchVehicle?->id,
+            'vehicle_name' => $branchVehicle?->name ?? $vehicleName,
+            'scooter_id' => $scooterId,
+            'assigned_at' => now(),
+            'battery_percent_start' => $this->validatedBatteryPercent($validated['battery_percent'] ?? null),
+            'status' => 'ongoing',
+        ]);
+
+        return response()->json(['status' => true, 'id' => $freeTrial->id]);
+    }
+
+    public function completeFreeTrial(Request $request): JsonResponse
+    {
+        $this->ensureUserLoggedIn();
+
+        $branch = $this->currentBranch();
+        abort_unless($branch, 403);
+
+        $validated = $request->validate([
+            'scooter_id' => ['required', 'string', 'max:100'],
+            'distance_km' => ['nullable', 'numeric', 'min:0', 'max:99999'],
+            'battery_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'actual_scooter_on_seconds' => ['nullable', 'integer', 'min:0', 'max:4294967295'],
+        ]);
+
+        $scooterId = $this->normalizeScooterId($validated['scooter_id']);
+        abort_if($scooterId === '', 422);
+
+        $freeTrial = FreeTrial::query()
+            ->where('branch_id', $branch->id)
+            ->where('scooter_id', $scooterId)
+            ->whereNull('completed_at')
+            ->latest('assigned_at')
+            ->first();
+
+        if (!$freeTrial) {
+            return response()->json([
+                'status' => false,
+                'message' => 'No ongoing free trial found for this scooter.',
+            ], 404);
+        }
+
+        $completedAt = now();
+        $actualSeconds = $this->validatedActualScooterOnSeconds($validated['actual_scooter_on_seconds'] ?? null);
+        $durationSeconds = $actualSeconds ?? max(0, $freeTrial->assigned_at->diffInSeconds($completedAt));
+
+        $freeTrial->update([
+            'completed_at' => $completedAt,
+            'duration_seconds' => $durationSeconds,
+            'distance_km' => $this->validatedTripDistance($validated['distance_km'] ?? null),
+            'battery_percent_end' => $this->validatedBatteryPercent($validated['battery_percent'] ?? null),
+            'status' => 'completed',
+        ]);
+
+        return response()->json(['status' => true]);
     }
 
     public function updateScooterLiveStats(Request $request): JsonResponse
