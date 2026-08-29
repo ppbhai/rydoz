@@ -93,18 +93,25 @@ float readScooterVoltage()
 
 uint8_t voltageToPercent(float voltage)
 {
-    const float emptyV = 30.0f;
-    const float fullV = 42.0f;
+    // Calibrated against two measured reference points instead of assuming
+    // a straight 0%-100% pack range: 33.0V reads as 10%, 41.3V reads as 100%.
+    const float refLowV = 33.0f;
+    const float refLowPercent = 10.0f;
+    const float refHighV = 41.3f;
+    const float refHighPercent = 100.0f;
+    const float slope = (refHighPercent - refLowPercent) / (refHighV - refLowV);
 
-    if (voltage <= emptyV) {
-        return 0;
-    }
-
-    if (voltage >= fullV) {
+    if (voltage >= refHighV) {
         return 100;
     }
 
-    return (uint8_t)roundf(((voltage - emptyV) / (fullV - emptyV)) * 100.0f);
+    float percent = refLowPercent + (voltage - refLowV) * slope;
+
+    if (percent <= 0.0f) {
+        return 0;
+    }
+
+    return (uint8_t)roundf(percent);
 }
 
 bool chargerIsConnected()
