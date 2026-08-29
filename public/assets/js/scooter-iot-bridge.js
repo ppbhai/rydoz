@@ -38,9 +38,27 @@
         return Array.from(form?.querySelectorAll('button[type="submit"], input[type="submit"]') || []);
     }
 
-    function setIotSubmitEnabled(form, enabled) {
-        if (!form?.matches?.('form[data-iot-command]') || !form.querySelector('[data-iot-device-input]')) {
+    // Whether the submit button on an assign/complete row should be enabled
+    // depends on which fields the branch has turned on for it:
+    //  - a vehicle-number field present (with or without IoT also on): just
+    //    require a value in it - typing or scanning the ID is enough, no
+    //    Bluetooth connection is required even if IoT is also enabled.
+    //  - only an IoT device field present: require an actual Bluetooth
+    //    connection before allowing submit.
+    //  - neither field present: never gated, always enabled.
+    function recomputeSubmitEnabled(form) {
+        if (!form?.matches?.('form.assign-row')) {
             return;
+        }
+
+        const rideNumberInput = form.querySelector('[data-ride-number-input]');
+        const iotDeviceInput = form.querySelector('[data-iot-device-input]');
+        let enabled = true;
+
+        if (rideNumberInput) {
+            enabled = rideNumberInput.value.trim() !== '';
+        } else if (iotDeviceInput) {
+            enabled = Boolean(form.dataset.connectedScooterId);
         }
 
         iotSubmitButtons(form).forEach((button) => {
@@ -55,7 +73,7 @@
         }
 
         form.dataset.connectedScooterId = scooterId || '';
-        setIotSubmitEnabled(form, Boolean(scooterId));
+        recomputeSubmitEnabled(form);
     }
 
     function markFormDisconnected(form) {
@@ -64,7 +82,7 @@
         }
 
         delete form.dataset.connectedScooterId;
-        setIotSubmitEnabled(form, false);
+        recomputeSubmitEnabled(form);
     }
 
     function setGlobalStatus(message, state) {
@@ -1080,12 +1098,19 @@
             });
         });
 
-        document.querySelectorAll('form[data-iot-command]').forEach((form) => {
-            setIotSubmitEnabled(form, false);
-            form.addEventListener('submit', handleSubmit);
+        document.querySelectorAll('form.assign-row').forEach((form) => {
+            recomputeSubmitEnabled(form);
+
+            if (form.matches('form[data-iot-command]')) {
+                form.addEventListener('submit', handleSubmit);
+            }
 
             form.querySelector('[data-iot-device-input]')?.addEventListener('input', () => {
                 markFormDisconnected(form);
+            });
+
+            form.querySelector('[data-ride-number-input]')?.addEventListener('input', () => {
+                recomputeSubmitEnabled(form);
             });
         });
 

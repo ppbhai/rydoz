@@ -1055,7 +1055,7 @@
         }
     </style>
 </head>
-<script src="{{ URL::asset('assets/js/scooter-iot-bridge.js') }}?v=20260829-2"></script>
+<script src="{{ URL::asset('assets/js/scooter-iot-bridge.js') }}?v=20260829-3"></script>
 <script>
     document.addEventListener('DOMContentLoaded', () => {
         const navigationEntry = performance.getEntriesByType('navigation')[0];
