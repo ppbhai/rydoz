@@ -42,7 +42,7 @@
         }
 
         iotSubmitButtons(form).forEach((button) => {
-            button.disabled = false;
+            button.disabled = !enabled;
             button.dataset.iotRequiresConnection = 'true';
         });
     }
