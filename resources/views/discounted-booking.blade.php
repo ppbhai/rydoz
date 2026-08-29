@@ -56,7 +56,7 @@
                                     <th>Vehicle ID</th>
                                     <th>Assign Ride Time</th>
                                     <th>Actual Time</th>
-                                    <th>Actual Scooter On Time</th>
+                                    <th>Actual Vehicle On Time</th>
                                     <th>Battery % Assign</th>
                                     <th>Battery % Complete</th>
                                     <th>Used Battery</th>

@@ -92,30 +92,42 @@
                             <div class="border rounded p-3 h-100">
                                 <h6 class="text-muted mb-2">Total</h6>
                                 <h3 class="mb-0" data-live-stat="total_scooters">{{ number_format($liveDashboardStats['total_scooters']) }}</h3>
+                                <small class="text-muted d-block mt-1">Fleet size set for this branch</small>
                             </div>
                         </div>
                         <div class="col-md-6 col-xl">
                             <div class="border rounded p-3 h-100">
                                 <h6 class="text-muted mb-2">Ongoing Ride</h6>
                                 <h3 class="mb-0" data-live-stat="ongoing_rides">{{ number_format($liveDashboardStats['ongoing_rides']) }}</h3>
+                                <small class="text-muted d-block mt-1">Rented out right now</small>
                             </div>
                         </div>
                         <div class="col-md-6 col-xl">
                             <div class="border rounded p-3 h-100">
                                 <h6 class="text-muted mb-2">Available</h6>
                                 <h3 class="mb-0" data-live-stat="available_scooters">{{ number_format($liveDashboardStats['available_scooters']) }}</h3>
+                                <small class="text-muted d-block mt-1">Not on a ride right now</small>
+                            </div>
+                        </div>
+                        <div class="col-md-6 col-xl">
+                            <div class="border rounded p-3 h-100">
+                                <h6 class="text-muted mb-2">Online</h6>
+                                <h3 class="mb-0" data-live-stat="online_scooters">{{ number_format($liveDashboardStats['online_scooters']) }}</h3>
+                                <small class="text-muted d-block mt-1">Ready to connect now</small>
                             </div>
                         </div>
                         <div class="col-md-6 col-xl">
                             <div class="border rounded p-3 h-100">
                                 <h6 class="text-muted mb-2">Offline</h6>
                                 <h3 class="mb-0" data-live-stat="offline_scooters">{{ number_format($liveDashboardStats['offline_scooters']) }}</h3>
+                                <small class="text-muted d-block mt-1">No Bluetooth signal in the last 2 min</small>
                             </div>
                         </div>
                         <div class="col-md-6 col-xl">
                             <div class="border rounded p-3 h-100">
                                 <h6 class="text-muted mb-2">Low Battery</h6>
                                 <h3 class="mb-0" data-live-stat="low_battery_scooters">{{ number_format($liveDashboardStats['low_battery_scooters']) }}</h3>
+                                <small class="text-muted d-block mt-1">Online scooters at 10% or below</small>
                             </div>
                         </div>
                     </div>

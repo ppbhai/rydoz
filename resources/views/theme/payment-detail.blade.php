@@ -78,7 +78,7 @@
                                 <span style="font-weight: normal">Ride time:
                                     <strong
                                         style="font-weight: normal">{{ $ride->actual_minutes ? $ride->actual_minutes . ' min' : '-' }}</strong></span>
-                                <span style="font-weight: normal">Scooter on time:
+                                <span style="font-weight: normal">Vehicle on time:
                                     <strong
                                         style="font-weight: normal">{{ $ride->actual_scooter_on_seconds !== null ? gmdate('H:i:s', (int) $ride->actual_scooter_on_seconds) : '-' }}</strong></span>
                             </div>
