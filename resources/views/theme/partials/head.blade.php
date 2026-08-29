@@ -1129,7 +1129,7 @@
                         const rawValue = (barcodes[0].rawValue || '').trim();
 
                         if (rawValue !== '') {
-                            scannerTargetInput.value = scannerTargetInput.hasAttribute('data-iot-device-input') && window.ScooterIot?.normalizeScooterId
+                            scannerTargetInput.value = window.ScooterIot?.normalizeScooterId
                                 ? window.ScooterIot.normalizeScooterId(rawValue)
                                 : rawValue;
                             scannerTargetInput.dispatchEvent(new Event('input', { bubbles: true }));

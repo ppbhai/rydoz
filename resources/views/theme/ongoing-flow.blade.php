@@ -337,7 +337,9 @@
                         const rawValue = (barcodes[0].rawValue || '').trim();
 
                         if (rawValue !== '') {
-                            scannerTargetInput.value = rawValue;
+                            scannerTargetInput.value = window.ScooterIot?.normalizeScooterId
+                                ? window.ScooterIot.normalizeScooterId(rawValue)
+                                : rawValue;
                             scannerTargetInput.dispatchEvent(new Event('input', { bubbles: true }));
                             window.dispatchEvent(new CustomEvent('scooter:qr-scanned', {
                                 detail: {
