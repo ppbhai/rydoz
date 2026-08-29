@@ -17,6 +17,8 @@
     const latestTelemetryByScooter = new Map();
     let liveStatsTimer = null;
     let liveStatsReportTimeout = null;
+    let nearbyScanKeepAliveTimer = null;
+    const NEARBY_SCAN_RESTART_MS = 25000;
     let bluetoothEnablePrompted = false;
     const BLUETOOTH_GATE_DISMISSED_KEY = 'rydozBluetoothGateDismissed';
     let bluetoothGateDismissed = window.localStorage?.getItem(BLUETOOTH_GATE_DISMISSED_KEY) === '1';
@@ -621,6 +623,31 @@
         await nativeCall('startNearbyScan');
     }
 
+    // Android's BLE scanner can silently stop delivering results after the
+    // app has been open a while (background throttling, OEM battery savers,
+    // internal scan-session limits), which made batteries appear to vanish
+    // from the nearby list. Periodically re-issue the scan, and immediately
+    // when the app/WebView comes back to the foreground, so it keeps going.
+    function startNearbyScanKeepAlive() {
+        if (nearbyScanKeepAliveTimer) {
+            return;
+        }
+
+        nearbyScanKeepAliveTimer = window.setInterval(() => {
+            if (document.hidden) {
+                return;
+            }
+
+            startNearbyScan().catch(() => {});
+        }, NEARBY_SCAN_RESTART_MS);
+
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) {
+                startNearbyScan().catch(() => {});
+            }
+        });
+    }
+
     async function reportLiveStats() {
         const url = document.querySelector('meta[name="scooter-live-stats-url"]')?.content;
         const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
@@ -942,6 +969,7 @@
 
         window.addEventListener('scooter:bluetooth-enabled', () => {
             startNearbyScan().catch(() => {});
+            startNearbyScanKeepAlive();
             startLiveStatsReporting();
         });
 
@@ -1052,6 +1080,7 @@
         startNearbyScan().catch((error) => {
             console.warn('Nearby scooter scan could not start.', error);
         });
+        startNearbyScanKeepAlive();
         startLiveStatsReporting();
 
         window.setInterval(() => {
