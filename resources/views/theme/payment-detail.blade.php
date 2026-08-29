@@ -74,6 +74,14 @@
                                 <span><strong
                                         style="color:black; font-weight:bold">{{ number_format((float) $ride->charge, 0) }}/-</strong></span>
                             </div>
+                            <div style="display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                                <span style="font-weight: normal">Ride time:
+                                    <strong
+                                        style="font-weight: normal">{{ $ride->actual_minutes ? $ride->actual_minutes . ' min' : '-' }}</strong></span>
+                                <span style="font-weight: normal">Scooter on time:
+                                    <strong
+                                        style="font-weight: normal">{{ $ride->actual_scooter_on_seconds !== null ? gmdate('H:i:s', (int) $ride->actual_scooter_on_seconds) : '-' }}</strong></span>
+                            </div>
                         </div>
                     </div>
                 @endforeach
