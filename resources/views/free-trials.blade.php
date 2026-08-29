@@ -60,9 +60,6 @@
                                     <th>Vehicle</th>
                                     <th>Vehicle ID</th>
                                     <th>Assigned At</th>
-                                    <th>Completed At</th>
-                                    <th>Duration</th>
-                                    <th>Distance (km)</th>
                                     <th>Battery % Start</th>
                                     <th>Battery % End</th>
                                     <th>Status</th>
@@ -77,9 +74,6 @@
                                         <td>{{ $freeTrial->vehicle_name ?: '-' }}</td>
                                         <td>{{ $freeTrial->scooter_id ?: '-' }}</td>
                                         <td>{{ $freeTrial->assigned_at?->format('d M Y h:i A') ?: '-' }}</td>
-                                        <td>{{ $freeTrial->completed_at?->format('d M Y h:i A') ?: '-' }}</td>
-                                        <td>{{ $freeTrial->duration_seconds !== null ? gmdate('H:i:s', (int) $freeTrial->duration_seconds) : '-' }}</td>
-                                        <td>{{ $freeTrial->distance_km !== null ? number_format((float) $freeTrial->distance_km, 3) . ' km' : '-' }}</td>
                                         <td>{{ $freeTrial->battery_percent_start !== null ? $freeTrial->battery_percent_start . '%' : '-' }}</td>
                                         <td>{{ $freeTrial->battery_percent_end !== null ? $freeTrial->battery_percent_end . '%' : '-' }}</td>
                                         <td>
@@ -90,7 +84,7 @@
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="11" class="text-center text-muted">No free trial found for the selected filters.</td>
+                                        <td colspan="8" class="text-center text-muted">No free trial found for the selected filters.</td>
                                     </tr>
                                 @endforelse
                             </tbody>

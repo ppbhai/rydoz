@@ -178,9 +178,7 @@ class RideFlowController extends Controller
 
         $validated = $request->validate([
             'scooter_id' => ['required', 'string', 'max:100'],
-            'distance_km' => ['nullable', 'numeric', 'min:0', 'max:99999'],
             'battery_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'actual_scooter_on_seconds' => ['nullable', 'integer', 'min:0', 'max:4294967295'],
         ]);
 
         $scooterId = $this->normalizeScooterId($validated['scooter_id']);
@@ -189,7 +187,7 @@ class RideFlowController extends Controller
         $freeTrial = FreeTrial::query()
             ->where('branch_id', $branch->id)
             ->where('scooter_id', $scooterId)
-            ->whereNull('completed_at')
+            ->where('status', 'ongoing')
             ->latest('assigned_at')
             ->first();
 
@@ -200,14 +198,7 @@ class RideFlowController extends Controller
             ], 404);
         }
 
-        $completedAt = now();
-        $actualSeconds = $this->validatedActualScooterOnSeconds($validated['actual_scooter_on_seconds'] ?? null);
-        $durationSeconds = $actualSeconds ?? max(0, $freeTrial->assigned_at->diffInSeconds($completedAt));
-
         $freeTrial->update([
-            'completed_at' => $completedAt,
-            'duration_seconds' => $durationSeconds,
-            'distance_km' => $this->validatedTripDistance($validated['distance_km'] ?? null),
             'battery_percent_end' => $this->validatedBatteryPercent($validated['battery_percent'] ?? null),
             'status' => 'completed',
         ]);

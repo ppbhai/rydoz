@@ -108,11 +108,7 @@
             function recordFreeTrialCompleted(id) {
                 return postJson('{{ route('free-trial.complete') }}', {
                     scooter_id: id,
-                    distance_km: latestTelemetry?.km,
                     battery_percent: latestTelemetry?.battery,
-                    actual_scooter_on_seconds: latestTelemetry?.actual_scooter_on_seconds
-                        ?? latestTelemetry?.onSeconds
-                        ?? latestTelemetry?.seconds,
                 });
             }
 

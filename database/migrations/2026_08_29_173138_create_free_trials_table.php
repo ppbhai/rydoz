@@ -22,16 +22,13 @@ return new class extends Migration
             $table->string('vehicle_name')->nullable();
             $table->string('scooter_id');
             $table->timestamp('assigned_at');
-            $table->timestamp('completed_at')->nullable();
-            $table->unsignedInteger('duration_seconds')->nullable();
-            $table->decimal('distance_km', 8, 3)->nullable();
             $table->unsignedTinyInteger('battery_percent_start')->nullable();
             $table->unsignedTinyInteger('battery_percent_end')->nullable();
             $table->string('status')->default('ongoing');
             $table->timestamps();
 
             $table->index(['branch_id', 'assigned_at']);
-            $table->index(['scooter_id', 'completed_at']);
+            $table->index(['scooter_id', 'status']);
         });
     }
 

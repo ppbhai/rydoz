@@ -13,9 +13,6 @@ class FreeTrial extends Model
         'vehicle_name',
         'scooter_id',
         'assigned_at',
-        'completed_at',
-        'duration_seconds',
-        'distance_km',
         'battery_percent_start',
         'battery_percent_end',
         'status',
@@ -25,9 +22,6 @@ class FreeTrial extends Model
     {
         return [
             'assigned_at' => 'datetime',
-            'completed_at' => 'datetime',
-            'duration_seconds' => 'integer',
-            'distance_km' => 'decimal:3',
             'battery_percent_start' => 'integer',
             'battery_percent_end' => 'integer',
         ];
