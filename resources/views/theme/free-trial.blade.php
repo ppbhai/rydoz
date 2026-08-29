@@ -22,7 +22,7 @@
                         data-shared-scan
                         data-target-input="free-trial-iot-device"
                         aria-label="Scan IoT QR">
-                        <i class="fas fa-bluetooth-b"></i>
+                        <i class="fab fa-bluetooth-b"></i>
                     </button>
                 </div>
 

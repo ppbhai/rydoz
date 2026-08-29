@@ -163,7 +163,7 @@
                                                     data-iot-scan
                                                     data-iot-target="complete-iot-device-{{ $booking->id }}"
                                                     aria-label="Scan IoT QR">
-                                                    <i class="fas fa-bluetooth-b"></i>
+                                                    <i class="fab fa-bluetooth-b"></i>
                                                 </button>
                                             </div>
                                             <div class="iot-status small" data-iot-status>Scan IoT QR to connect Bluetooth.</div>

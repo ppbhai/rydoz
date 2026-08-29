@@ -342,7 +342,7 @@
 
         .accordion-body {
             display: none;
-            padding: 0 14px 14px;
+            padding: 14px 14px 14px;
             border-top: 1px solid var(--line);
         }
 
@@ -545,6 +545,16 @@
             font-size: 0.92rem;
             font-weight: 700;
             line-height: 1.2;
+        }
+
+        .assign-row > button[type="submit"],
+        .assign-row-top > button[type="submit"] {
+            font-size: 0.92rem;
+            font-weight: 600;
+        }
+
+        .timer {
+            font-size: 0.92rem;
         }
 
         .assign-input {
@@ -887,8 +897,8 @@
         }
 
         .nearby-scan-retry {
-            width: 38px;
-            min-width: 38px;
+            width: 46px;
+            min-width: 46px;
             height: 38px;
             padding: 0;
             display: inline-flex;
