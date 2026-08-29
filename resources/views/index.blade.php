@@ -133,7 +133,7 @@
                                     <th>Name</th>
                                     <th>Battery</th>
                                     <th>Status</th>
-                                    <th>Assigned Ride Count (24 Hours)</th>
+                                    <th>Assigned Ride Count (Today)</th>
                                     <th>Total Ride KM (Lifetime)</th>
                                 </tr>
                             </thead>

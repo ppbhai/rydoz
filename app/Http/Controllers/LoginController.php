@@ -191,7 +191,7 @@ class LoginController extends Controller
             ->flip();
 
         $assignCountsLastDay = (clone $rideQuery)
-            ->where('start_time', '>=', now()->subDay())
+            ->whereDate('start_time', today())
             ->selectRaw('ride_number, count(*) as assign_count')
             ->groupBy('ride_number')
             ->pluck('assign_count', 'ride_number');
