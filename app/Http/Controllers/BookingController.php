@@ -51,7 +51,7 @@ class BookingController extends Controller
     {
         $bookings = $this->discountedBookingQuery($request)->get();
 
-        return $this->streamBookingsCsv($bookings, 'discounted-bookings-' . now()->format('Ymd-His') . '.csv');
+        return $this->streamBookingsCsv($bookings, 'discounted-bookings-' . now()->format('Ymd-His') . '.csv', true);
     }
 
     public function paymentReport(Request $request)
