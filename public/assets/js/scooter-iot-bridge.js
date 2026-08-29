@@ -550,6 +550,30 @@
         return telemetry;
     }
 
+    // A single BLE read right after STOP would sometimes miss the final
+    // trip km / actual-on-time (the notify hadn't arrived yet, or the read
+    // simply failed), leaving the trip KM and scooter-on-time blank/zero on
+    // the completed ride. Retry the same way ensureAssignableBattery() does
+    // for the assign flow, until both values are present or attempts run out.
+    async function ensureFinalTelemetry(form, scooterId, fallbackTelemetry = null) {
+        let telemetry = null;
+
+        for (let attempt = 0; attempt < 5; attempt++) {
+            telemetry = await refreshTelemetry(form, scooterId).catch(() => null);
+
+            const hasKm = telemetryKm(telemetry) !== null;
+            const hasActualSeconds = telemetryActualSeconds(telemetry) !== null;
+
+            if (hasKm && hasActualSeconds) {
+                return telemetry;
+            }
+
+            await wait(600);
+        }
+
+        return telemetry || fallbackTelemetry;
+    }
+
     function wait(ms) {
         return new Promise((resolve) => window.setTimeout(resolve, ms));
     }
@@ -962,9 +986,12 @@
                 }
             } else if (command === 'STOP') {
                 setStatus(form, 'Waiting for final KM...', 'pending');
-                await wait(1500);
-                const telemetryAfterStop = await refreshTelemetry(form, scooterId).catch(() => null);
-                const telemetry = telemetryAfterStop || stopTelemetryBeforeCommand || latestTelemetryByScooter.get(scooterId) || latestTelemetry;
+                await wait(900);
+                const telemetry = await ensureFinalTelemetry(
+                    form,
+                    scooterId,
+                    stopTelemetryBeforeCommand || latestTelemetryByScooter.get(scooterId) || latestTelemetry
+                );
                 if (telemetry) {
                     captureTelemetryOnMatchingForms(telemetry, form);
                 }
