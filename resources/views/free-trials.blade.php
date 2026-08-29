@@ -60,9 +60,6 @@
                                     <th>Vehicle</th>
                                     <th>Vehicle ID</th>
                                     <th>Assigned At</th>
-                                    <th>Battery % Start</th>
-                                    <th>Battery % End</th>
-                                    <th>Status</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -74,13 +71,6 @@
                                         <td>{{ $freeTrial->vehicle_name ?: '-' }}</td>
                                         <td>{{ $freeTrial->scooter_id ?: '-' }}</td>
                                         <td>{{ $freeTrial->assigned_at?->format('d M Y h:i A') ?: '-' }}</td>
-                                        <td>{{ $freeTrial->battery_percent_start !== null ? $freeTrial->battery_percent_start . '%' : '-' }}</td>
-                                        <td>{{ $freeTrial->battery_percent_end !== null ? $freeTrial->battery_percent_end . '%' : '-' }}</td>
-                                        <td>
-                                            <span class="badge {{ $freeTrial->status === 'completed' ? 'bg-success' : 'bg-warning' }}">
-                                                {{ ucfirst($freeTrial->status) }}
-                                            </span>
-                                        </td>
                                     </tr>
                                 @empty
                                     <tr>
