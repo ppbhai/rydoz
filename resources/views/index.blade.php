@@ -92,7 +92,7 @@
                             <div class="border rounded p-3 h-100">
                                 <h6 class="text-muted mb-2">Total</h6>
                                 <h3 class="mb-0" data-live-stat="total_scooters">{{ number_format($liveDashboardStats['total_scooters']) }}</h3>
-                                <small class="text-muted d-block mt-1">Fleet size set for this branch</small>
+                                <small class="text-muted d-block mt-1">Vehicle set for this branch</small>
                             </div>
                         </div>
                         <div class="col-md-6 col-xl">
