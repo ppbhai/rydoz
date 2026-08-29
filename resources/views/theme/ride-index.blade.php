@@ -59,7 +59,7 @@
                 <div class="search-input-wrap mb-3">
                     <i class="fas fa-search search-input-icon"></i>
                     <input type="text" class="form-control" id="pendingAssignmentSearch" value="{{ $search }}"
-                        placeholder="Search by Name, Mobile Or Vehicle">
+                        placeholder="Search By Name, Mobile Or Vehicle">
                 </div>
 
                 <div class="stack-sm">
