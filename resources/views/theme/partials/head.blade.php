@@ -410,6 +410,13 @@
             color: #fff;
         }
 
+        .custom-select,
+        .custom-select option {
+            text-align: center;
+            font-weight: bold;
+            color: black;
+        }
+
         .vehicle-option {
             border: 1px solid var(--line);
             border-radius: var(--radius-sm);
@@ -420,6 +427,20 @@
         .vehicle-option.is-selected {
             border-color: var(--brand);
             background: rgba(254, 81, 0, 0.06);
+        }
+
+        .btn.vehicle-select-btn {
+            min-height: 46px;
+            padding: 10px 14px;
+            font-size: 0.92rem;
+            font-weight: 600;
+            line-height: 1.3;
+            text-align: left;
+            white-space: normal;
+        }
+
+        .btn.vehicle-select-btn span {
+            font-weight: inherit;
         }
 
         .summary-card {

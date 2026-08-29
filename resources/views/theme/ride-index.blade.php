@@ -153,7 +153,7 @@
                                                             <i class="fas fa-bluetooth-b"></i>
                                                         </button>
                                                     </div>
-                                                    <div class="iot-status small mt-1" data-iot-status>Scan IoT QR to connect Bluetooth.</div>
+                                                    <div class="iot-status small mt-2" data-iot-status>Scan IoT QR to connect Bluetooth.</div>
                                                 @endif
                                                 <button type="submit" class="btn btn-theme w-100 mt-2">Assign
                                                     {{ $ride->vehicle_name }}</button>

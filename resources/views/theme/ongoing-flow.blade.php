@@ -166,7 +166,7 @@
                                                     <i class="fas fa-bluetooth-b"></i>
                                                 </button>
                                             </div>
-                                            <div class="iot-status small mt-1" data-iot-status>Scan IoT QR to connect Bluetooth.</div>
+                                            <div class="iot-status small" data-iot-status>Scan IoT QR to connect Bluetooth.</div>
                                         @endif
                                         <button class="btn btn-theme" type="submit">Complete</button>
                                     </div>

@@ -24,7 +24,7 @@
                     <div class="search-input-wrap flex-grow-1">
                         <i class="fas fa-search search-input-icon"></i>
                         <input type="text" class="form-control" id="assignedScooterSearch"
-                            data-assigned-scooter-search placeholder="Search assigned scooter">
+                            data-assigned-scooter-search placeholder="Search scooter">
                     </div>
                     <button type="button" class="btn btn-light-theme scanner-btn scan-trigger" data-shared-scan
                         data-target-input="assignedScooterSearch" aria-label="Scan scooter search">

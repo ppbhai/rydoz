@@ -22,52 +22,36 @@
                     <div class="detail-row"><span>Mobile</span><strong>{{ $booking->mobile }}</strong></div>
                 </div> --}}
 
-                <div class="panel">
-                    {{-- <h2 class="panel-title">ID Proof</h2> --}}
-                    <div class="stack-sm">
-                        <style>
-                            .custom-select {
-                                text-align: center;
-                                /* center text */
-                                font-weight: bold;
-                                /* bold text */
-                                color: black;
-                                /* black text */
-                            }
-
-                            /* Optional: try styling dropdown options (limited support) */
-                            .custom-select option {
-                                text-align: center;
-                                font-weight: bold;
-                                color: black;
-                            }
-                        </style>
-                        @if ($branch->document_select_enabled)
-                            <div>
-                                <select class="form-select custom-select" id="documentTypeSelect" name="document_type"
-                                    required>
-                                    <option value="">ID Proof</option>
-                                    <option value="Aadhar Card">Aadhar Card</option>
-                                    <option value="Driving License">Driving License</option>
-                                    <option value="PAN Card">PAN Card</option>
-                                    <option value="Passport">Passport</option>
-                                    <option value="Voter ID">Voter ID</option>
-                                </select>
-                            </div>
-                        @endif
-                        @if ($branch->photo_enabled)
-                            <div>
-                                <button type="button" class="btn btn-light-theme w-100" id="capturePhotoBtn"
-                                    data-requires-id-proof="{{ $branch->document_select_enabled ? '1' : '0' }}"
-                                    @if ($branch->document_select_enabled) disabled aria-disabled="true" @endif>Click
-                                    Photo</button>
-                                <input type="file" class="d-none" id="proofImageInput" name="proof_image"
-                                    accept="image/*" capture="environment"
-                                    @if ($branch->document_select_enabled) disabled @endif>
-                            </div>
-                        @endif
+                @if ($branch->document_select_enabled || $branch->photo_enabled)
+                    <div class="panel">
+                        <div class="stack-sm">
+                            @if ($branch->document_select_enabled)
+                                <div>
+                                    <select class="form-select custom-select" id="documentTypeSelect" name="document_type"
+                                        required>
+                                        <option value="">ID Proof</option>
+                                        <option value="Aadhar Card">Aadhar Card</option>
+                                        <option value="Driving License">Driving License</option>
+                                        <option value="PAN Card">PAN Card</option>
+                                        <option value="Passport">Passport</option>
+                                        <option value="Voter ID">Voter ID</option>
+                                    </select>
+                                </div>
+                            @endif
+                            @if ($branch->photo_enabled)
+                                <div>
+                                    <button type="button" class="btn btn-light-theme w-100" id="capturePhotoBtn"
+                                        data-requires-id-proof="{{ $branch->document_select_enabled ? '1' : '0' }}"
+                                        @if ($branch->document_select_enabled) disabled aria-disabled="true" @endif>Click
+                                        Photo</button>
+                                    <input type="file" class="d-none" id="proofImageInput" name="proof_image"
+                                        accept="image/*" capture="environment"
+                                        @if ($branch->document_select_enabled) disabled @endif>
+                                </div>
+                            @endif
+                        </div>
                     </div>
-                </div>
+                @endif
 
                 <div class="panel">
                     <div class="stack-sm">
@@ -95,7 +79,7 @@
                 </div>
 
                 <input type="hidden" name="vehicles_json" id="vehiclesJson">
-                <button type="submit" class="btn btn-theme w-100" style="font-size: 1rem">Submit</button>
+                <button type="submit" class="btn btn-theme w-100">Submit</button>
             </form>
         </div>
     </div>

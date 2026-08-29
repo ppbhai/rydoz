@@ -28,7 +28,7 @@
                     <div class="search-input-wrap flex-grow-1">
                         <i class="fas fa-search search-input-icon"></i>
                         <input type="text" class="form-control" id="nearbyScooterSearch"
-                            data-nearby-scooter-search placeholder="Search battery scooter">
+                            data-nearby-scooter-search placeholder="Search scooter">
                     </div>
                     <button type="button" class="btn btn-light-theme scanner-btn scan-trigger" data-shared-scan
                         data-target-input="nearbyScooterSearch" aria-label="Scan scooter search">
