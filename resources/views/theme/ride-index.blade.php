@@ -108,7 +108,7 @@
                                             @endif
                                             <div class="assign-row-top">
                                                 <div class="assign-name">{{ $ride->vehicle_name }}</div>
-                                                <div style="display: flex;">
+                                                <div style="display: flex; gap: 8px;">
                                                     @if ($branch->vehicle_number_required || $branch->scanner_enabled)
                                                         <input type="text"
                                                             class="form-control assign-input ride-number-input"
