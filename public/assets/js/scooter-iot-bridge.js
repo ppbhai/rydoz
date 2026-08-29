@@ -445,6 +445,39 @@
         return data.charging === true || data.charging === 1 || data.charging === '1' || data.charging === 'true';
     }
 
+    // The native Android bridge reports low-level Bluetooth events (scan
+    // failure codes, GATT service lookups, etc). Translate the ones staff
+    // actually see into plain language instead of raw technical wording.
+    function friendlyBleStatus(message) {
+        const text = String(message || '').trim();
+
+        if (/scanner unavailable/i.test(text)) {
+            return 'Bluetooth is not available on this device.';
+        }
+
+        if (/scan failed/i.test(text)) {
+            return 'Bluetooth scan failed. Please try again.';
+        }
+
+        if (/service not found/i.test(text)) {
+            return 'Could not connect to this scooter. Make sure it is powered nearby and try again.';
+        }
+
+        if (/^scanning for/i.test(text)) {
+            return 'Searching for scooter...';
+        }
+
+        if (/^connecting to/i.test(text)) {
+            return 'Connecting to scooter...';
+        }
+
+        if (/disconnected/i.test(text)) {
+            return 'Bluetooth disconnected.';
+        }
+
+        return text;
+    }
+
     function formatConnectedMessage(scooterId, telemetry) {
         const parts = [`Bluetooth connected${scooterId ? `: ${scooterId}` : ''}`];
         const battery = telemetryBattery(telemetry);
@@ -909,7 +942,7 @@
                 await sendCommand('RESET_KM', form);
                 await wait(250);
             } else if (command === 'STOP') {
-                setStatus(form, 'Reading scooter telemetry...', 'pending');
+                setStatus(form, 'Reading scooter data...', 'pending');
                 stopTelemetryBeforeCommand = await refreshTelemetry(form, scooterId).catch(() => null);
                 if (stopTelemetryBeforeCommand) {
                     captureTelemetryOnMatchingForms(stopTelemetryBeforeCommand, form);
@@ -943,7 +976,7 @@
                 captureTelemetryOnMatchingForms(telemetry, form);
 
                 if (hasNativeBridge() && !hasKm && battery === null && actualSeconds === null) {
-                    throw new Error('IoT telemetry was not received. Scan/connect IoT and try Complete again.');
+                    throw new Error('Could not read the scooter\'s data. Scan/connect the scooter and try Complete again.');
                 }
 
                 setStatus(
@@ -993,7 +1026,7 @@
         });
 
         window.addEventListener('scooter:ble-status', (event) => {
-            const message = event.detail?.message || 'Bluetooth status updated.';
+            const message = friendlyBleStatus(event.detail?.message || 'Bluetooth status updated.');
             const state = /failed|not|unavailable|error|disconnect/i.test(message) ? 'error' : 'pending';
             setGlobalStatus(message, state);
         });
@@ -1018,11 +1051,11 @@
             const parts = [];
 
             if (typeof data.active !== 'undefined') {
-                parts.push(data.active ? 'active' : 'idle');
+                parts.push(data.active ? 'Powered on' : 'Powered off');
             }
 
             if (typeof data.battery !== 'undefined') {
-                parts.push(`${data.battery}%${telemetryCharging(data) ? ' Charging' : ''}`);
+                parts.push(`Battery ${data.battery}%${telemetryCharging(data) ? ' Charging' : ''}`);
                 setBatteryInput(form, Number(data.battery));
             }
 
@@ -1031,7 +1064,7 @@
             }
 
             if (parts.length > 0) {
-                setStatus(form, `Telemetry: ${parts.join(' | ')}`, 'connected');
+                setStatus(form, parts.join(' | '), 'connected');
             }
         });
 
