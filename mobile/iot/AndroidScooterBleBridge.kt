@@ -89,7 +89,7 @@ class AndroidScooterBleBridge(
 
     @SuppressLint("MissingPermission")
     private fun scanForScooter(scooterId: String) {
-        val scanner = bluetoothAdapter.bluetoothLeScanner ?: return emitStatus("Bluetooth scanner unavailable")
+        val scanner = bluetoothAdapter.bluetoothLeScanner ?: return emitStatus("Bluetooth is not available on this device")
         val filters = listOf(
             ScanFilter.Builder()
                 .setDeviceName("RYDOZ-$scooterId")
@@ -100,16 +100,16 @@ class AndroidScooterBleBridge(
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
             .build()
 
-        emitStatus("Scanning for RYDOZ-$scooterId")
+        emitStatus("Searching for scooter...")
         scanner.startScan(filters, settings, object : ScanCallback() {
             override fun onScanResult(callbackType: Int, result: ScanResult) {
                 scanner.stopScan(this)
-                emitStatus("Connecting to ${result.device.name ?: scooterId}")
+                emitStatus("Connecting to scooter...")
                 gatt = result.device.connectGatt(context, false, gattCallback)
             }
 
             override fun onScanFailed(errorCode: Int) {
-                emitStatus("BLE scan failed: $errorCode")
+                emitStatus("Bluetooth scan failed. Please try again.")
             }
         })
     }
@@ -128,7 +128,7 @@ class AndroidScooterBleBridge(
 
         @SuppressLint("MissingPermission")
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
-            val service = gatt.getService(serviceUuid) ?: return emitStatus("Scooter service not found")
+            val service = gatt.getService(serviceUuid) ?: return emitStatus("Could not connect to this scooter. Make sure it is powered nearby and try again.")
             commandCharacteristic = service.getCharacteristic(commandUuid)
             val telemetry = service.getCharacteristic(telemetryUuid)
             telemetryCharacteristic = telemetry
@@ -164,7 +164,7 @@ class AndroidScooterBleBridge(
 
     @SuppressLint("MissingPermission")
     private fun scanNearbyScooters() {
-        val scanner = bluetoothAdapter.bluetoothLeScanner ?: return emitNearbyScanStatus("Bluetooth scanner unavailable")
+        val scanner = bluetoothAdapter.bluetoothLeScanner ?: return emitNearbyScanStatus("Bluetooth is not available on this device")
         nearbyScanCallback?.let { scanner.stopScan(it) }
 
         val filters = listOf(
@@ -186,11 +186,11 @@ class AndroidScooterBleBridge(
             }
 
             override fun onScanFailed(errorCode: Int) {
-                emitNearbyScanStatus("Nearby scan failed: $errorCode")
+                emitNearbyScanStatus("Bluetooth scan failed. Please try again.")
             }
         }
 
-        emitNearbyScanStatus("Searching for powered scooters...")
+        emitNearbyScanStatus("Searching for scooters...")
         scanner.startScan(filters, settings, nearbyScanCallback)
     }
 

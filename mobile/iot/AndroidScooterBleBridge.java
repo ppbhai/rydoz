@@ -97,7 +97,7 @@ public class AndroidScooterBleBridge {
             context.startActivity(intent);
         }
 
-        emitStatus("Bluetooth must be turned on to use the app.");
+        emitStatus("Turn on Bluetooth to continue.");
         return "{\"ok\":true,\"available\":true,\"enabled\":false,\"requested\":true}";
     }
 
@@ -109,13 +109,13 @@ public class AndroidScooterBleBridge {
             String mac = payload.optString("mac").trim();
 
             if (scooterId.equals(pendingScooterId) && commandCharacteristic != null && gatt != null) {
-                emitStatus("Already connected to " + scooterId);
+                emitStatus("Already connected.");
                 emitConnected(scooterId);
                 return "{\"ok\":true,\"alreadyConnected\":true}";
             }
 
             if (scooterId.equals(pendingScooterId) && connecting) {
-                emitStatus("Bluetooth connection already in progress.");
+                emitStatus("Connecting to scooter...");
                 return "{\"ok\":true,\"connecting\":true}";
             }
 
@@ -134,7 +134,7 @@ public class AndroidScooterBleBridge {
             scanForScooter(pendingScooterId);
             return "{\"ok\":true}";
         } catch (JSONException error) {
-            emitStatus("Invalid Bluetooth request.");
+            emitStatus("Could not connect to this scooter. Please try again.");
             return "{\"ok\":false,\"error\":\"invalid_json\"}";
         }
     }
@@ -147,7 +147,7 @@ public class AndroidScooterBleBridge {
 
             if (commandCharacteristic == null || gatt == null) {
                 pendingCommand = command;
-                emitStatus("Command queued until Bluetooth connects.");
+                emitStatus("Connecting to scooter...");
                 return "{\"ok\":true,\"queued\":true}";
             }
 
@@ -168,7 +168,7 @@ public class AndroidScooterBleBridge {
         boolean started = gatt.readCharacteristic(telemetryCharacteristic);
 
         if (!started) {
-            emitStatus("Telemetry read could not start.");
+            emitStatus("Could not read scooter data.");
         }
 
         return "{\"ok\":" + (started ? "true" : "false") + ",\"telemetry\":" + (lastTelemetryJson.isEmpty() ? "null" : lastTelemetryJson) + "}";
@@ -191,7 +191,7 @@ public class AndroidScooterBleBridge {
         commandCharacteristic = null;
         telemetryCharacteristic = null;
         connecting = false;
-        emitStatus("Bluetooth disconnected after command.");
+        emitStatus("Bluetooth disconnected.");
         resumeNearbyScan();
 
         return "{\"ok\":true}";
@@ -213,15 +213,12 @@ public class AndroidScooterBleBridge {
         }
 
         if (bluetoothAdapter == null || bluetoothAdapter.getBluetoothLeScanner() == null) {
-            emitNearbyScanStatus("Bluetooth scanner unavailable.");
+            emitNearbyScanStatus("Bluetooth is not available on this device.");
             return "{\"ok\":false,\"error\":\"scanner_unavailable\"}";
         }
 
         if (nearbyScanCallback != null) {
-            emitNearbyScanStatus(
-                    "BLE scanner active: " + nearbyPacketCount
-                            + " packets, " + nearbyScooterCount + " scooters."
-            );
+            emitNearbyScanStatus("Searching for scooters...");
             return "{\"ok\":true,\"alreadyScanning\":true}";
         }
 
@@ -245,7 +242,7 @@ public class AndroidScooterBleBridge {
             @Override
             public void onScanFailed(int errorCode) {
                 nearbyScanCallback = null;
-                emitNearbyScanStatus("Nearby scooter scan failed: " + errorCode);
+                emitNearbyScanStatus("Bluetooth scan failed. Please try again.");
             }
         };
 
@@ -253,7 +250,7 @@ public class AndroidScooterBleBridge {
         nearbyScooterCount = 0;
         lastNearbyDebugMs = 0;
         bluetoothAdapter.getBluetoothLeScanner().startScan(null, settings, nearbyScanCallback);
-        emitNearbyScanStatus("BLE scanner started. Waiting for advertisements...");
+        emitNearbyScanStatus("Searching for scooters...");
         return "{\"ok\":true}";
     }
 
@@ -298,12 +295,12 @@ public class AndroidScooterBleBridge {
 
             connecting = true;
             BluetoothDevice device = bluetoothAdapter.getRemoteDevice(mac);
-            emitStatus("Connecting by MAC " + mac);
+            emitStatus("Connecting to scooter...");
             connectGatt(device);
             scheduleConnectTimeout();
         } catch (IllegalArgumentException error) {
             connecting = false;
-            emitStatus("Invalid scooter MAC: " + mac);
+            emitStatus("Could not connect to this scooter.");
         }
     }
 
@@ -315,7 +312,7 @@ public class AndroidScooterBleBridge {
         }
 
         if (bluetoothAdapter == null || bluetoothAdapter.getBluetoothLeScanner() == null) {
-            emitStatus("Bluetooth scanner unavailable.");
+            emitStatus("Bluetooth is not available on this device.");
             return;
         }
 
@@ -339,7 +336,7 @@ public class AndroidScooterBleBridge {
                 .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
                 .build();
 
-        emitStatus("Scanning for " + deviceName);
+        emitStatus("Searching for scooter...");
         connecting = true;
 
         activeScanCallback = new ScanCallback() {
@@ -358,7 +355,7 @@ public class AndroidScooterBleBridge {
             @Override
             public void onScanFailed(int errorCode) {
                 connecting = false;
-                emitStatus("BLE scan failed: " + errorCode);
+                emitStatus("Bluetooth scan failed. Please try again.");
                 resumeNearbyScan();
             }
         };
@@ -370,7 +367,7 @@ public class AndroidScooterBleBridge {
                 bluetoothAdapter.getBluetoothLeScanner().stopScan(activeScanCallback);
                 activeScanCallback = null;
                 connecting = false;
-                emitStatus("Scooter not found. Keep ESP32 on and close nRF Connect.");
+                emitStatus("Scooter not found. Make sure it is powered on and nearby.");
                 resumeNearbyScan();
             }
         }, 12000);
@@ -399,7 +396,7 @@ public class AndroidScooterBleBridge {
 
         bluetoothAdapter.getBluetoothLeScanner().stopScan(activeScanCallback);
         activeScanCallback = null;
-        emitStatus("Connecting to " + (deviceName != null ? deviceName : "scooter service"));
+        emitStatus("Connecting to scooter...");
         connectGatt(result.getDevice());
         scheduleConnectTimeout();
     }
@@ -432,7 +429,7 @@ public class AndroidScooterBleBridge {
             ).trim();
 
             if (scooterId.isEmpty() || battery > 100) {
-                emitNearbyScanStatus("RYDOZ packet found but its battery data is invalid.");
+                emitNearbyScanStatus("Searching for scooters...");
                 return;
             }
 
@@ -466,10 +463,7 @@ public class AndroidScooterBleBridge {
 
             if (now - lastNearbyDebugMs >= 3000) {
                 lastNearbyDebugMs = now;
-                emitNearbyScanStatus(
-                        "BLE scanner active: " + nearbyPacketCount
-                                + " packets seen, no RYDOZ battery packet."
-                );
+                emitNearbyScanStatus("Searching for scooters...");
             }
             return;
         }
@@ -505,7 +499,7 @@ public class AndroidScooterBleBridge {
                     gatt.close();
                     gatt = null;
                 }
-                emitStatus("Bluetooth connect timeout. Restart ESP32 and try again.");
+                emitStatus("Could not connect. Please try again.");
                 resumeNearbyScan();
             }
         }, 12000);
@@ -536,13 +530,13 @@ public class AndroidScooterBleBridge {
         public void onServicesDiscovered(BluetoothGatt bluetoothGatt, int status) {
             if (status != BluetoothGatt.GATT_SUCCESS) {
                 connecting = false;
-                emitStatus("Service discovery failed: " + status);
+                emitStatus("Could not connect to this scooter. Please try again.");
                 return;
             }
 
             if (bluetoothGatt.getService(SERVICE_UUID) == null) {
                 connecting = false;
-                emitStatus("Scooter BLE service not found.");
+                emitStatus("Could not connect to this scooter. Make sure it is powered nearby and try again.");
                 return;
             }
 
@@ -588,7 +582,7 @@ public class AndroidScooterBleBridge {
         public void onCharacteristicWrite(BluetoothGatt bluetoothGatt, BluetoothGattCharacteristic characteristic, int status) {
             if (COMMAND_UUID.equals(characteristic.getUuid())) {
                 if (status != BluetoothGatt.GATT_SUCCESS) {
-                    emitStatus("Command write failed: " + status);
+                    emitStatus("Could not send command. Please try again.");
                 }
             }
         }
@@ -612,7 +606,7 @@ public class AndroidScooterBleBridge {
         boolean started = gatt.writeCharacteristic(commandCharacteristic);
 
         if (!started) {
-            emitStatus("Command write could not start: " + command);
+            emitStatus("Sending command...");
             mainHandler.postDelayed(() -> retryCommandWrite(command), COMMAND_WRITE_RETRY_MS);
         }
 
@@ -634,7 +628,7 @@ public class AndroidScooterBleBridge {
 
         if (!started) {
             pendingCommand = command;
-            emitStatus("Command write retry queued: " + command);
+            emitStatus("Sending command...");
         }
     }
 

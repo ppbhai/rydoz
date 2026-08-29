@@ -445,29 +445,66 @@
         return data.charging === true || data.charging === 1 || data.charging === '1' || data.charging === 'true';
     }
 
-    // The native Android bridge reports low-level Bluetooth events (scan
-    // failure codes, GATT service lookups, etc). Translate the ones staff
-    // actually see into plain language instead of raw technical wording.
+    // The native Android bridge reports low-level Bluetooth/BLE internals
+    // (scan failure codes, packet/advertisement counts, GATT service lookups,
+    // debug hints like "close nRF Connect" or "restart ESP32", etc). None of
+    // that is meaningful to branch staff, so translate every raw message —
+    // from both the connect flow (scooter:ble-status) and the nearby battery
+    // scan (scooter:nearby-scan-status) — into a short, plain-language line
+    // before it's ever shown. Order matters: more specific patterns first.
     function friendlyBleStatus(message) {
         const text = String(message || '').trim();
+
+        // "Found SCOOTER001 at 82%." is already simple and useful — keep it.
+        if (/^found\s+\S+\s+at\s+\d+%/i.test(text)) {
+            return text;
+        }
+
+        if (/turn on bluetooth|bluetooth (adapter|must be turned on)/i.test(text)) {
+            return 'Turn on Bluetooth to continue.';
+        }
 
         if (/scanner unavailable/i.test(text)) {
             return 'Bluetooth is not available on this device.';
         }
 
-        if (/scan failed/i.test(text)) {
+        if (/already connected/i.test(text)) {
+            return 'Already connected.';
+        }
+
+        if (/connection already in progress|command queued|retry queued/i.test(text)) {
+            return 'Connecting...';
+        }
+
+        if (/scan(ning)? failed/i.test(text)) {
             return 'Bluetooth scan failed. Please try again.';
         }
 
-        if (/service not found/i.test(text)) {
+        if (/service (discovery failed|not found)/i.test(text)) {
             return 'Could not connect to this scooter. Make sure it is powered nearby and try again.';
         }
 
-        if (/^scanning for/i.test(text)) {
+        if (/not found|connect timeout/i.test(text)) {
+            return 'Scooter not found. Make sure it is powered on and nearby.';
+        }
+
+        if (/invalid (scooter|bluetooth)|invalid.*mac/i.test(text)) {
+            return 'Could not connect to this scooter.';
+        }
+
+        if (/command (write|could not)|telemetry read could not start/i.test(text)) {
+            return 'Could not talk to the scooter. Please try again.';
+        }
+
+        if (/packet|scanner (active|started)|waiting for advertisements/i.test(text)) {
             return 'Searching for scooter...';
         }
 
-        if (/^connecting to/i.test(text)) {
+        if (/^scanning for|^searching for/i.test(text)) {
+            return 'Searching for scooter...';
+        }
+
+        if (/^connecting/i.test(text)) {
             return 'Connecting to scooter...';
         }
 
@@ -1072,26 +1109,19 @@
                 return;
             }
 
+            // The scooter pushes a fresh reading roughly once a second while
+            // connected. Keep capturing that data (battery/km/on-time land in
+            // the form's hidden inputs here), but don't turn it into a
+            // constantly-changing status line — handleSubmit() already shows
+            // one clear message per step ("Powering scooter on...", "Scooter
+            // powered on", "Final KM captured: ..."), and overwriting that
+            // every second with a raw on/off + battery + km feed just reads
+            // as flicker.
             rememberTelemetry(data);
             captureTelemetryOnMatchingForms(data, form);
 
-            const parts = [];
-
-            if (typeof data.active !== 'undefined') {
-                parts.push(data.active ? 'Powered on' : 'Powered off');
-            }
-
             if (typeof data.battery !== 'undefined') {
-                parts.push(`Battery ${data.battery}%${telemetryCharging(data) ? ' Charging' : ''}`);
                 setBatteryInput(form, Number(data.battery));
-            }
-
-            if (typeof data.km !== 'undefined') {
-                parts.push(`${Number(data.km).toFixed(3)} km`);
-            }
-
-            if (parts.length > 0) {
-                setStatus(form, parts.join(' | '), 'connected');
             }
         });
 
@@ -1118,7 +1148,7 @@
             const empty = document.querySelector('[data-nearby-scooter-empty]');
 
             if (empty && nearbyScooters.size === 0) {
-                empty.textContent = event.detail?.message || 'Searching for powered scooters...';
+                empty.textContent = friendlyBleStatus(event.detail?.message) || 'Searching for scooter...';
             }
         });
 
