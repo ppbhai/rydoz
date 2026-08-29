@@ -79,8 +79,9 @@ class RideFlowController extends Controller
         abort_unless($branch, 403);
 
         $vehicles = $this->branchVehicles($branch);
+        $scooterVehicleMap = $this->scooterVehicleMap($branch);
 
-        return view('theme.scooter-batteries', compact('vehicles'));
+        return view('theme.scooter-batteries', compact('vehicles', 'scooterVehicleMap'));
     }
 
     public function scooterUsage()
@@ -94,11 +95,9 @@ class RideFlowController extends Controller
             ->selectRaw('branch_vehicle_id, vehicle_name, ride_number, count(*) as assign_count, max(start_time) as last_assigned_at')
             ->whereNotNull('ride_number')
             ->where('ride_number', '!=', '')
-            ->where('start_time', '>=', now()->subDay())
+            ->whereDate('start_time', today())
             ->whereHas('booking', fn ($query) => $query->where('branch_id', $branch->id))
             ->groupBy('branch_vehicle_id', 'vehicle_name', 'ride_number')
-            ->orderByDesc('assign_count')
-            ->orderBy('ride_number')
             ->get();
 
         $ongoingScooters = BookingRide::query()
@@ -113,6 +112,13 @@ class RideFlowController extends Controller
         $assignedScooters->each(function ($scooter) use ($ongoingScooters) {
             $scooter->usage_status = $ongoingScooters->has($scooter->ride_number) ? 'ongoing' : 'available';
         });
+
+        // Least-used scooters surface first; an ongoing ride is pushed to the
+        // bottom of the list even if it has the lowest 24h usage count, since
+        // staff can't hand it out right now anyway.
+        $assignedScooters = $assignedScooters
+            ->sortBy(fn ($scooter) => ($scooter->usage_status === 'ongoing' ? 1000000 : 0) + (int) $scooter->assign_count)
+            ->values();
 
         $vehicles = $this->branchVehicles($branch);
 
@@ -1040,6 +1046,27 @@ class RideFlowController extends Controller
             ->where('branch_id', $branch->id)
             ->orderBy('name')
             ->get();
+    }
+
+    /**
+     * Map of scooter id (ride_number) => most recently used vehicle name for
+     * this branch, so the live/nearby battery scan (which only knows the
+     * scooter id from its BLE advertisement) can be filtered by vehicle.
+     */
+    protected function scooterVehicleMap(Branch $branch): array
+    {
+        return BookingRide::query()
+            ->whereNotNull('ride_number')
+            ->where('ride_number', '!=', '')
+            ->whereHas('booking', fn ($query) => $query->where('branch_id', $branch->id))
+            ->orderByDesc('start_time')
+            ->orderByDesc('id')
+            ->get(['ride_number', 'vehicle_name'])
+            ->reduce(function (array $map, BookingRide $ride) {
+                $map[$ride->ride_number] ??= $ride->vehicle_name;
+
+                return $map;
+            }, []);
     }
 
     protected function storeUploadedFile($file, string $uploadDirectory): string

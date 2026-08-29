@@ -838,6 +838,33 @@
             gap: 12px;
         }
 
+        .vehicle-tabs {
+            display: flex;
+            gap: 8px;
+            overflow-x: auto;
+            flex: 1;
+            min-width: 0;
+            padding-bottom: 2px;
+        }
+
+        .vehicle-tab {
+            flex: 0 0 auto;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            background: #fff;
+            color: var(--text);
+            padding: 7px 14px;
+            font-size: 0.82rem;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .vehicle-tab.is-active {
+            background: var(--brand);
+            border-color: var(--brand);
+            color: #fff;
+        }
+
         .nearby-scan-retry {
             width: 38px;
             min-width: 38px;

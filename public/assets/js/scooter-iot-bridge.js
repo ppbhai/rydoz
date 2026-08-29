@@ -545,6 +545,11 @@
         const empty = document.querySelector('[data-nearby-scooter-empty]');
         const search = document.querySelector('[data-nearby-scooter-search]');
         const term = (search?.value || '').trim().toLowerCase();
+        const activeTab = document.querySelector('[data-vehicle-tab].is-active');
+        const activeVehicle = (activeTab?.dataset.vehicleName || '').trim();
+        const vehicleMap = window.RydozScooterVehicleMap || {};
+        const sortToggle = document.querySelector('[data-nearby-sort-toggle]');
+        const sortDescending = sortToggle?.dataset.sortDirection === 'desc';
 
         if (!list) {
             return;
@@ -552,12 +557,11 @@
 
         const scooters = Array.from(nearbyScooters.values())
             .filter((scooter) => {
-                const vehicleFilter = (document.querySelector('[data-nearby-vehicle-filter]')?.value || '').trim();
-                const matchesVehicle = vehicleFilter === '' || /scooter/i.test(vehicleFilter);
+                const matchesVehicle = activeVehicle === '' || vehicleMap[scooter.scooterId] === activeVehicle;
 
                 return matchesVehicle && (term === '' || scooter.scooterId.toLowerCase().includes(term));
             })
-            .sort((left, right) => left.scooterId.localeCompare(right.scooterId));
+            .sort((left, right) => sortDescending ? right.battery - left.battery : left.battery - right.battery);
 
         list.replaceChildren(...scooters.map((scooter) => {
             const item = document.createElement('div');
@@ -576,7 +580,7 @@
 
         if (empty) {
             empty.hidden = scooters.length > 0;
-            if ((document.querySelector('[data-nearby-vehicle-filter]')?.value || '').trim() !== '' && scooters.length === 0) {
+            if (activeVehicle !== '' && scooters.length === 0) {
                 empty.textContent = 'Battery data is available for IoT scooters.';
             } else if (nearbyScooters.size > 0 && scooters.length === 0) {
                 empty.textContent = 'No scooter matches search.';

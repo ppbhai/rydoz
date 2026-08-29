@@ -11,19 +11,18 @@
         <div class="page-body">
             <div class="panel nearby-scooters-panel">
                 <div class="nearby-scooters-heading">
-                    <h2 class="panel-title mb-0">Battery Status</h2>
+                    <div class="vehicle-tabs" data-nearby-vehicle-tabs>
+                        <button type="button" class="vehicle-tab is-active" data-vehicle-tab data-vehicle-name="">All</button>
+                        @foreach ($vehicles as $vehicle)
+                            <button type="button" class="vehicle-tab" data-vehicle-tab
+                                data-vehicle-name="{{ $vehicle->name }}">{{ $vehicle->name }}</button>
+                        @endforeach
+                    </div>
                     <button type="button" class="btn btn-light-theme nearby-scan-retry"
                         data-nearby-scan-retry aria-label="Refresh nearby scooters">
                         <i class="fas fa-rotate" aria-hidden="true"></i>
                     </button>
                 </div>
-
-                <select class="form-select mb-3" data-nearby-vehicle-filter>
-                    <option value="">All vehicles</option>
-                    @foreach ($vehicles as $vehicle)
-                        <option value="{{ $vehicle->name }}">{{ $vehicle->name }}</option>
-                    @endforeach
-                </select>
 
                 <div class="scanner-field mb-3">
                     <div class="search-input-wrap flex-grow-1">
@@ -34,6 +33,10 @@
                     <button type="button" class="btn btn-light-theme scanner-btn scan-trigger" data-shared-scan
                         data-target-input="nearbyScooterSearch" aria-label="Scan scooter search">
                         <i class="fas fa-barcode"></i>
+                    </button>
+                    <button type="button" class="btn btn-light-theme scanner-btn" data-nearby-sort-toggle
+                        data-sort-direction="asc" aria-label="Sort by battery">
+                        <i class="fas fa-arrow-down-short-wide" aria-hidden="true"></i>
                     </button>
                 </div>
 
@@ -47,11 +50,13 @@
     </div>
 
     <script>
+        window.RydozScooterVehicleMap = @json($scooterVehicleMap);
+
         document.addEventListener('DOMContentLoaded', () => {
             const retryButton = document.querySelector('[data-nearby-scan-retry]');
             const message = document.querySelector('[data-nearby-scooter-empty]');
             const nearbySearch = document.querySelector('[data-nearby-scooter-search]');
-            const vehicleFilter = document.querySelector('[data-nearby-vehicle-filter]');
+            const sortToggle = document.querySelector('[data-nearby-sort-toggle]');
 
             function refreshNearbyScooters() {
                 if (!message) {
@@ -87,7 +92,22 @@
             nearbySearch?.addEventListener('input', () => {
                 window.ScooterIot?.renderNearbyScooters?.();
             });
-            vehicleFilter?.addEventListener('change', () => {
+
+            document.querySelectorAll('[data-vehicle-tab]').forEach((tab) => {
+                tab.addEventListener('click', () => {
+                    document.querySelectorAll('[data-vehicle-tab]').forEach((btn) => btn.classList.remove('is-active'));
+                    tab.classList.add('is-active');
+                    window.ScooterIot?.renderNearbyScooters?.();
+                });
+            });
+
+            sortToggle?.addEventListener('click', () => {
+                const nextDirection = sortToggle.dataset.sortDirection === 'desc' ? 'asc' : 'desc';
+                sortToggle.dataset.sortDirection = nextDirection;
+                sortToggle.setAttribute('aria-label', nextDirection === 'desc' ? 'Sorted highest battery first' : 'Sorted lowest battery first');
+                const icon = sortToggle.querySelector('i');
+                icon?.classList.toggle('fa-arrow-down-short-wide', nextDirection === 'asc');
+                icon?.classList.toggle('fa-arrow-up-wide-short', nextDirection === 'desc');
                 window.ScooterIot?.renderNearbyScooters?.();
             });
 
