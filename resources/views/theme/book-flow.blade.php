@@ -74,10 +74,16 @@
             const notice = document.getElementById('blacklistNotice');
 
             if (data.blacklisted) {
+                const reason = (data.blacklist_reason || '').trim();
                 notice.classList.remove('d-none');
                 notice.innerHTML = `
                     <strong>⚠ This customer is blacklisted.</strong><br>
+                    ${reason ? `Last reason: ${reason}` : ''}
                 `;
+                flash(
+                    reason ? `Customer is blacklisted. Last reason: ${reason}` : 'Customer is blacklisted.',
+                    'danger'
+                );
             } else {
                 notice.classList.add('d-none');
                 notice.innerHTML = '';
