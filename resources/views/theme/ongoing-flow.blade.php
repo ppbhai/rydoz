@@ -18,7 +18,7 @@
             <div class="search-panel">
                 <div class="search-input-wrap">
                     <i class="fas fa-search search-input-icon"></i>
-                    <input type="text" class="form-control" id="ongoingSearch" value="{{ $search }}" placeholder="Search By Name, Mobile, Vehicle ID">
+                    <input type="text" class="form-control" id="ongoingSearch" value="{{ $search }}" placeholder="Search By Name Or Mobile ">
                 </div>
             </div>
 

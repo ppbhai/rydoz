@@ -19,7 +19,7 @@
             <div class="search-panel">
                 <div class="search-input-wrap">
                     <i class="fas fa-search search-input-icon"></i>
-                    <input type="text" class="form-control" id="completedBookingSearch" value="{{ $search }}" placeholder="Search by customer, mobile, vehicle, or number">
+                    <input type="text" class="form-control" id="completedBookingSearch" value="{{ $search }}" placeholder="Search By Customer name">
                 </div>
             </div>
 
@@ -44,7 +44,7 @@
                         <div class="accordion-toggle">
                             <div>
                                 <div>{{ $booking->name }}</div>
-                                <div class="text-muted small">{{ $booking->mobile }}</div>
+                                {{-- <div class="text-muted small">{{ $booking->mobile }}</div> --}}
                                 <div class="booking-meta">
                                     {{-- <span>Booking #{{ $booking->id }}</span> --}}
                                     <span>{{ $booking->paid_at ? $booking->paid_at->format('d F Y, h:i A') : '-' }}</span>

@@ -46,7 +46,7 @@
                         class="form-control"
                         name="search"
                         value="{{ $search }}"
-                        placeholder="Search by customer, mobile, payment method, ride, or ride number">
+                        placeholder="Search by Customer, Mobile Or Payment Method">
                     <div class="d-grid gap-2" style="grid-template-columns: repeat(2, minmax(0, 1fr)); display:grid;">
                         <button class="btn btn-theme" type="submit">Search</button>
                         <a href="{{ route('payments.collected') }}" class="btn btn-light-theme">Reset</a>

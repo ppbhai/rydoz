@@ -1,7 +1,7 @@
-@include('theme.partials.head', ['title' => 'Todays Payment'])
+@include('theme.partials.head', ['title' => "Today's Payment"])
 <body>
     @include('theme.partials.header', [
-        'title' => 'Todays Payment',
+        'title' => "Today's Payment",
         'kicker' => 'Summary',
         'backUrl' => route('index'),
     ])
@@ -9,7 +9,7 @@
     <div class="app-shell">
         <div class="page-body">
             <div class="panel">
-                <h2 class="panel-title text-center">Today Payment</h2>
+                <h2 class="panel-title text-center">Today's Payment</h2>
                 <div class="table-card mt-3">
                     <table class="table" style="min-width:0;">
                         <thead>

@@ -39,7 +39,7 @@
                 </a>
                 <a href="{{ route('payments.today') }}" class="metric-card"
                     style="min-height:40px; padding:10px 16px; align-items:center; justify-content:center; background:var(--brand); color:#fff; border-radius:999px;">
-                    <div class="metric-value" style="color:#fff; font-size:1.2rem;">Todays Payment</div>
+                    <div class="metric-value" style="color:#fff; font-size:1.2rem;">Today's Payment</div>
                 </a>
                 <a href="{{ route('bookings.completed') }}" class="metric-card"
                     style="min-height:40px; padding:10px 16px; align-items:center; justify-content:center; background:var(--brand); color:#fff; border-radius:999px;">
@@ -59,7 +59,7 @@
                 <div class="search-input-wrap mb-3">
                     <i class="fas fa-search search-input-icon"></i>
                     <input type="text" class="form-control" id="pendingAssignmentSearch" value="{{ $search }}"
-                        placeholder="Search by customer, mobile, or vehicle">
+                        placeholder="Search by Name, Mobile Or Vehicle">
                 </div>
 
                 <div class="stack-sm">

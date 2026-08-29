@@ -20,7 +20,7 @@
                 <div class="search-input-wrap">
                     <i class="fas fa-search search-input-icon"></i>
                     <input type="text" class="form-control" id="paymentSearch" value="{{ $search }}"
-                        placeholder="Search by customer, mobile, vehicle, or number">
+                        placeholder="Search by Customer Or Mobile">
                 </div>
             </div>
 
