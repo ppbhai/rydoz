@@ -114,12 +114,6 @@
                         </div>
                         <div class="col-md-6 col-xl">
                             <div class="border rounded p-3 h-100">
-                                <h6 class="text-muted mb-2">Online</h6>
-                                <h3 class="mb-0" data-live-stat="online_scooters">{{ number_format($liveDashboardStats['online_scooters']) }}</h3>
-                            </div>
-                        </div>
-                        <div class="col-md-6 col-xl">
-                            <div class="border rounded p-3 h-100">
                                 <h6 class="text-muted mb-2">Low Battery</h6>
                                 <h3 class="mb-0" data-live-stat="low_battery_scooters">{{ number_format($liveDashboardStats['low_battery_scooters']) }}</h3>
                             </div>

@@ -835,6 +835,7 @@
         .scanner-btn {
             width: 46px;
             min-width: 46px;
+            height: 46px;
             padding: 0;
             display: inline-flex;
             align-items: center;
@@ -869,6 +870,10 @@
             gap: 12px;
         }
 
+        .nearby-scooters-heading {
+            margin-bottom: 12px;
+        }
+
         .vehicle-tabs {
             display: flex;
             gap: 8px;
@@ -880,11 +885,14 @@
 
         .vehicle-tab {
             flex: 0 0 auto;
+            display: inline-flex;
+            align-items: center;
+            min-height: 46px;
             border: 1px solid var(--line);
             border-radius: 999px;
             background: #fff;
             color: var(--text);
-            padding: 7px 14px;
+            padding: 0 14px;
             font-size: 0.82rem;
             font-weight: 700;
             white-space: nowrap;
@@ -899,7 +907,7 @@
         .nearby-scan-retry {
             width: 46px;
             min-width: 46px;
-            height: 38px;
+            height: 46px;
             padding: 0;
             display: inline-flex;
             align-items: center;
