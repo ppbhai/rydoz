@@ -18,7 +18,7 @@
             <div class="search-panel">
                 <div class="search-input-wrap">
                     <i class="fas fa-search search-input-icon"></i>
-                    <input type="text" class="form-control" id="ongoingSearch" value="{{ $search }}" placeholder="Search by name, mobile, vehicle, or number">
+                    <input type="text" class="form-control" id="ongoingSearch" value="{{ $search }}" placeholder="Search By Name, Mobile, Vehicle ID">
                 </div>
             </div>
 
@@ -139,7 +139,8 @@
                                             <div class="scanner-field">
                                                 <input type="text" class="form-control assign-input ride-number-input"
                                                     id="complete-number-{{ $booking->id }}" name="ride_number"
-                                                    placeholder="Enter Id Number">
+                                                    placeholder="Enter Id Number"
+                                                    data-ride-number-input>
                                                 @if ($branch->scanner_enabled)
                                                     <button type="button"
                                                         class="btn btn-light-theme scanner-btn scan-trigger"
