@@ -10,6 +10,8 @@
 #include <Arduino.h>
 #include <NimBLEDevice.h>
 #include <string.h>
+#include <esp_sleep.h>
+#include <driver/rtc_io.h>
 
 #define SCOOTER_ID "SCOOTER001"
 
@@ -65,6 +67,17 @@ const uint32_t VOLTAGE_CACHE_TTL_MS = 900;
 // Republish the percentage only once it moves by at least this much, so residual
 // single-count jitter never reaches the app. Endpoints (0/100) always report.
 const uint8_t BATTERY_PERCENT_HYSTERESIS = 2;
+const float DEEP_SLEEP_VOLTAGE_THRESHOLD = 30.0f;
+// Resume needs 1V of headroom above the sleep threshold so a pack resting near
+// 30V cannot sleep/wake/sleep in a loop that burns more power than it saves.
+const float DEEP_SLEEP_WAKE_VOLTAGE_THRESHOLD = 31.0f;
+const float DEEP_SLEEP_IMPLAUSIBLE_VOLTAGE = 5.0f;
+const uint32_t DEEP_SLEEP_LOW_VOLTAGE_SAMPLE_INTERVAL_MS = 2000;
+const uint8_t DEEP_SLEEP_LOW_VOLTAGE_CONFIRM_COUNT = 15;
+const uint32_t DEEP_SLEEP_BOOT_GRACE_MS = 20000;
+const uint64_t DEEP_SLEEP_TIMER_WAKE_US = 300ULL * 1000000ULL;
+const uint32_t DEEP_SLEEP_POST_WAKE_SETTLE_MS = 250;
+const bool DEBUG_DEEP_SLEEP = true;
 
 volatile uint32_t hallPulses = 0;
 volatile uint32_t lastHallMicros = 0;
@@ -93,6 +106,10 @@ uint8_t reportedBatteryPercent = 0;
 bool batteryPercentInitialised = false;
 float cachedVoltage = 0.0f;
 uint32_t voltageCacheMs = 0;
+uint8_t lowVoltageSampleCount = 0;
+uint32_t lastLowVoltageSampleMs = 0;
+float lastKnownVoltage = 0.0f;
+bool wokeFromDeepSleep = false;
 
 void IRAM_ATTR onHallPulse()
 {
@@ -616,6 +633,122 @@ void sendTelemetry()
     telemetryCharacteristic->notify();
 }
 
+void holdPowerLatchForDeepSleep()
+{
+    // GPIO output state is not retained in deep sleep. GPIO32 is unconnected on
+    // current hardware, but hold it anyway so the board still survives sleep if
+    // that line is ever wired as a power latch.
+    digitalWrite(ESP_POWER_HOLD_PIN, HIGH);
+
+    const gpio_num_t holdPin = (gpio_num_t)ESP_POWER_HOLD_PIN;
+
+    if (rtc_gpio_hold_en(holdPin) != ESP_OK) {
+        gpio_hold_en(holdPin);
+    }
+
+    // Master enable. Without this the per-pin holds above have no effect.
+    gpio_deep_sleep_hold_en();
+}
+
+void enterBatteryProtectionDeepSleep(float voltage)
+{
+    Serial.printf(
+        "DEEP SLEEP entering: battery %.2fV <= %.2fV, no ride active, charger absent. "
+        "Wake on charger (GPIO%u HIGH) or timer in %lu seconds.\n",
+        voltage,
+        DEEP_SLEEP_VOLTAGE_THRESHOLD,
+        CHARGER_SENSE_PIN,
+        (unsigned long)(DEEP_SLEEP_TIMER_WAKE_US / 1000000ULL));
+
+    // Sleep cannot drive these, so leave the scooter output hard OFF first.
+    digitalWrite(POWER_RELAY_PIN, LOW);
+    digitalWrite(BUTTON_OPTO_PIN, LOW);
+
+    NimBLEDevice::stopAdvertising();
+    NimBLEDevice::deinit(true);
+
+    holdPowerLatchForDeepSleep();
+
+    esp_sleep_enable_ext1_wakeup(1ULL << CHARGER_SENSE_PIN, ESP_EXT1_WAKEUP_ANY_HIGH);
+    esp_sleep_enable_timer_wakeup(DEEP_SLEEP_TIMER_WAKE_US);
+
+    Serial.flush();
+    esp_deep_sleep_start();
+}
+
+void updateLowVoltageDeepSleep()
+{
+    if (rideActive || scooterOutputWasOn || freeTrialActive) {
+        lowVoltageSampleCount = 0;
+        return;
+    }
+
+    if (chargerIsConnected()) {
+        lowVoltageSampleCount = 0;
+        return;
+    }
+
+    if (bleClientConnected) {
+        lowVoltageSampleCount = 0;
+        return;
+    }
+
+    if (millis() < DEEP_SLEEP_BOOT_GRACE_MS) {
+        return;
+    }
+
+    if (millis() - lastLowVoltageSampleMs < DEEP_SLEEP_LOW_VOLTAGE_SAMPLE_INTERVAL_MS) {
+        return;
+    }
+
+    lastLowVoltageSampleMs = millis();
+
+    // loop() already reads the voltage once per second for telemetry. Fall back to
+    // our own read if that value is missing, so removing the temporary calibration
+    // print cannot silently disable battery protection.
+    const float voltage = lastKnownVoltage > 0.0f ? lastKnownVoltage : cachedScooterVoltage();
+
+    if (voltage > DEEP_SLEEP_VOLTAGE_THRESHOLD) {
+        if (lowVoltageSampleCount > 0 && DEBUG_DEEP_SLEEP) {
+            Serial.printf(
+                "Deep sleep countdown reset: %.2fV is above %.2fV\n",
+                voltage,
+                DEEP_SLEEP_VOLTAGE_THRESHOLD);
+        }
+
+        lowVoltageSampleCount = 0;
+        return;
+    }
+
+    // A disconnected or shorted divider reads near zero, which would otherwise
+    // look like a critically low pack and sleep a healthy scooter.
+    if (voltage < DEEP_SLEEP_IMPLAUSIBLE_VOLTAGE) {
+        if (DEBUG_DEEP_SLEEP) {
+            Serial.printf("Deep sleep skipped: implausible voltage reading %.2fV\n", voltage);
+        }
+
+        lowVoltageSampleCount = 0;
+        return;
+    }
+
+    lowVoltageSampleCount++;
+
+    if (DEBUG_DEEP_SLEEP) {
+        Serial.printf(
+            "Low battery %.2fV <= %.2fV, confirmation %u/%u\n",
+            voltage,
+            DEEP_SLEEP_VOLTAGE_THRESHOLD,
+            lowVoltageSampleCount,
+            DEEP_SLEEP_LOW_VOLTAGE_CONFIRM_COUNT);
+    }
+
+    if (lowVoltageSampleCount < DEEP_SLEEP_LOW_VOLTAGE_CONFIRM_COUNT) {
+        return;
+    }
+
+    enterBatteryProtectionDeepSleep(voltage);
+}
+
 class CommandCallbacks : public NimBLECharacteristicCallbacks
 {
     void onWrite(NimBLECharacteristic *characteristic, NimBLEConnInfo &connInfo) override
@@ -698,15 +831,83 @@ void setupBle()
     Serial.println(deviceName);
 }
 
+void logDeepSleepWakeCause()
+{
+    const esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
+
+    wokeFromDeepSleep = true;
+
+    switch (cause) {
+        case ESP_SLEEP_WAKEUP_EXT1:
+            Serial.printf(
+                "WAKE cause=charger (ext1 GPIO%u), charger sense now %s\n",
+                CHARGER_SENSE_PIN,
+                chargerIsConnected() ? "HIGH" : "LOW");
+            break;
+        case ESP_SLEEP_WAKEUP_TIMER:
+            Serial.println("WAKE cause=timer (battery protection periodic check)");
+            break;
+        case ESP_SLEEP_WAKEUP_UNDEFINED:
+            wokeFromDeepSleep = false;
+            Serial.println("WAKE cause=power-on/reset (not deep sleep)");
+            break;
+        default:
+            Serial.printf("WAKE cause=other (%d)\n", (int)cause);
+            break;
+    }
+}
+
+void applyPostWakeBatteryDecision()
+{
+    if (!wokeFromDeepSleep) {
+        return;
+    }
+
+    // Let the rail and divider settle. Reading immediately risks a spuriously low
+    // first sample bouncing a recovered scooter straight back to sleep.
+    delay(DEEP_SLEEP_POST_WAKE_SETTLE_MS);
+
+    if (chargerIsConnected()) {
+        Serial.println("POST-WAKE: charger connected, staying awake regardless of battery voltage.");
+        return;
+    }
+
+    const float voltage = readScooterVoltage();
+    lastKnownVoltage = voltage;
+
+    if (voltage >= DEEP_SLEEP_WAKE_VOLTAGE_THRESHOLD) {
+        Serial.printf(
+            "POST-WAKE: battery recovered to %.2fV (>= %.2fV), resuming normal operation.\n",
+            voltage,
+            DEEP_SLEEP_WAKE_VOLTAGE_THRESHOLD);
+        return;
+    }
+
+    Serial.printf(
+        "POST-WAKE: battery still %.2fV and no charger, returning to deep sleep without starting BLE.\n",
+        voltage);
+    enterBatteryProtectionDeepSleep(voltage);
+}
+
 void setup()
 {
     Serial.begin(115200);
+
+    // A pad held through deep sleep stays latched after wake, which would make
+    // later digitalWrite() calls silently ineffective. Safe on a cold boot too.
+    rtc_gpio_hold_dis((gpio_num_t)ESP_POWER_HOLD_PIN);
+    gpio_hold_dis((gpio_num_t)ESP_POWER_HOLD_PIN);
+    gpio_deep_sleep_hold_dis();
+
     pinMode(POWER_RELAY_PIN, OUTPUT);
     pinMode(BUTTON_OPTO_PIN, OUTPUT);
     pinMode(ESP_POWER_HOLD_PIN, OUTPUT);
     pinMode(HALL_PIN, INPUT_PULLUP);
     pinMode(CHARGER_SENSE_PIN, INPUT);
     pinMode(SCOOTER_ON_SENSE_PIN, INPUT); // External 22k divider resistor already pulls this pin LOW.
+
+    // After pinMode: this logs the live charger-sense level on an ext1 wake.
+    logDeepSleepWakeCause();
 
     digitalWrite(POWER_RELAY_PIN, LOW);
     digitalWrite(BUTTON_OPTO_PIN, LOW);
@@ -715,6 +916,8 @@ void setup()
     analogReadResolution(12);
     analogSetPinAttenuation(BATTERY_ADC_PIN, ADC_11db);
     attachInterrupt(digitalPinToInterrupt(HALL_PIN), onHallPulse, FALLING);
+
+    applyPostWakeBatteryDecision();
 
     setupBle();
 }
@@ -726,7 +929,8 @@ void loop()
 
     if (millis() - lastTelemetryMs >= 1000) {
         lastTelemetryMs = millis();
-        Serial.printf("Computed battery voltage: %.3fV\n", cachedScooterVoltage()); // TEMP: remove after calibration
+        lastKnownVoltage = cachedScooterVoltage();
+        Serial.printf("Computed battery voltage: %.3fV\n", lastKnownVoltage); // TEMP: remove after calibration
         sendTelemetry();
     }
 
@@ -734,4 +938,8 @@ void loop()
         lastAdvertisementMs = millis();
         updateNearbyAdvertisement();
     }
+
+    // Last: this never returns once it decides to sleep, so telemetry and the
+    // advertisement above are always published before the board goes dark.
+    updateLowVoltageDeepSleep();
 }
