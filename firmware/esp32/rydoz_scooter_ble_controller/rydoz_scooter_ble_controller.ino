@@ -52,6 +52,19 @@ const uint32_t FREE_TRIAL_DISTANCE_GRACE_MS = 5000;
 const float FREE_TRIAL_LIMIT_KM = 0.100f;
 const uint8_t MIN_START_BATTERY_PERCENT = 10;
 const bool DEBUG_SCOOTER_ON_SENSE = true; // Set false after GPIO33 testing is complete.
+// One ADC count is ~0.207V at the battery, which the 10.84%/V slope below turns
+// into ~2.2 percentage points. So 1-2 counts of normal SAR ADC noise is enough to
+// visibly swing the reported percentage even when the pack voltage is rock steady.
+// A median rejects the outlier counts that drag a plain mean, and sampling across
+// a wider window catches slower drift that a 32ms burst cannot.
+const uint8_t VOLTAGE_SAMPLE_COUNT = 21;
+const uint32_t VOLTAGE_SAMPLE_DELAY_MS = 4;
+// Sampling now blocks ~84ms, so cache it: re-reading per caller would stall loop()
+// long enough to delay the 100ms scooter-sense poll and its 1s off-debounce.
+const uint32_t VOLTAGE_CACHE_TTL_MS = 900;
+// Republish the percentage only once it moves by at least this much, so residual
+// single-count jitter never reaches the app. Endpoints (0/100) always report.
+const uint8_t BATTERY_PERCENT_HYSTERESIS = 2;
 
 volatile uint32_t hallPulses = 0;
 volatile uint32_t lastHallMicros = 0;
@@ -76,6 +89,10 @@ bool freeTrialActive = false;
 uint32_t freeTrialStartMs = 0;
 uint32_t freeTrialStartPulses = 0;
 const char *freeTrialStopReason = "none";
+uint8_t reportedBatteryPercent = 0;
+bool batteryPercentInitialised = false;
+float cachedVoltage = 0.0f;
+uint32_t voltageCacheMs = 0;
 
 void IRAM_ATTR onHallPulse()
 {
@@ -91,16 +108,42 @@ void IRAM_ATTR onHallPulse()
 
 float readScooterVoltage()
 {
-    uint32_t total = 0;
+    uint16_t samples[VOLTAGE_SAMPLE_COUNT];
 
-    for (int i = 0; i < 16; i++) {
-        total += analogRead(BATTERY_ADC_PIN);
-        delay(2);
+    for (uint8_t i = 0; i < VOLTAGE_SAMPLE_COUNT; i++) {
+        samples[i] = (uint16_t)analogRead(BATTERY_ADC_PIN);
+        delay(VOLTAGE_SAMPLE_DELAY_MS);
     }
 
-    float adc = total / 16.0f;
-    float pinVoltage = (adc / ADC_MAX) * ADC_REF_V;
+    // Insertion sort: VOLTAGE_SAMPLE_COUNT is small and this keeps the median
+    // exact without pulling in a sort library.
+    for (uint8_t i = 1; i < VOLTAGE_SAMPLE_COUNT; i++) {
+        const uint16_t current = samples[i];
+        int16_t j = (int16_t)i - 1;
+
+        while (j >= 0 && samples[j] > current) {
+            samples[j + 1] = samples[j];
+            j--;
+        }
+
+        samples[j + 1] = current;
+    }
+
+    const float adc = (float)samples[VOLTAGE_SAMPLE_COUNT / 2];
+    const float pinVoltage = (adc / ADC_MAX) * ADC_REF_V;
     return pinVoltage * DIVIDER_RATIO * ADC_VOLTAGE_CORRECTION;
+}
+
+float cachedScooterVoltage()
+{
+    if (voltageCacheMs > 0 && millis() - voltageCacheMs < VOLTAGE_CACHE_TTL_MS) {
+        return cachedVoltage;
+    }
+
+    cachedVoltage = readScooterVoltage();
+    voltageCacheMs = millis();
+
+    return cachedVoltage;
 }
 
 uint8_t voltageToPercent(float voltage)
@@ -129,6 +172,34 @@ uint8_t voltageToPercent(float voltage)
     return (uint8_t)roundf(percent);
 }
 
+uint8_t stableBatteryPercent(float voltage)
+{
+    const uint8_t raw = voltageToPercent(voltage);
+
+    if (!batteryPercentInitialised) {
+        batteryPercentInitialised = true;
+        reportedBatteryPercent = raw;
+        return reportedBatteryPercent;
+    }
+
+    // Always follow the endpoints exactly, so a full or empty pack is never
+    // reported as approximate.
+    if (raw == 0 || raw == 100) {
+        reportedBatteryPercent = raw;
+        return reportedBatteryPercent;
+    }
+
+    const uint8_t delta = raw > reportedBatteryPercent
+            ? raw - reportedBatteryPercent
+            : reportedBatteryPercent - raw;
+
+    if (delta >= BATTERY_PERCENT_HYSTERESIS) {
+        reportedBatteryPercent = raw;
+    }
+
+    return reportedBatteryPercent;
+}
+
 bool chargerIsConnected()
 {
     return digitalRead(CHARGER_SENSE_PIN) == HIGH;
@@ -136,8 +207,11 @@ bool chargerIsConnected()
 
 bool startBatteryAllowed()
 {
+    // Uncached on purpose: a start request is a one-shot decision that deserves a
+    // fresh reading. Gate on the published value the app shows, so a scooter
+    // displaying an allowed percentage is never refused by an unseen raw reading.
     const float voltage = readScooterVoltage();
-    const uint8_t batteryPercent = voltageToPercent(voltage);
+    const uint8_t batteryPercent = stableBatteryPercent(voltage);
 
     if (batteryPercent <= MIN_START_BATTERY_PERCENT) {
         Serial.printf(
@@ -157,8 +231,8 @@ void updateNearbyAdvertisement()
         return;
     }
 
-    const float voltage = readScooterVoltage();
-    const uint8_t batteryPercent = voltageToPercent(voltage);
+    const float voltage = cachedScooterVoltage();
+    const uint8_t batteryPercent = stableBatteryPercent(voltage);
     const bool charging = chargerIsConnected();
     const String deviceName = "RYDOZ-" + String(SCOOTER_ID);
     const size_t scooterIdLength = strlen(SCOOTER_ID);
@@ -511,8 +585,8 @@ void sendTelemetry()
         speedKph = 0.0f;
     }
 
-    float voltage = readScooterVoltage();
-    uint8_t batteryPercent = voltageToPercent(voltage);
+    float voltage = cachedScooterVoltage();
+    uint8_t batteryPercent = stableBatteryPercent(voltage);
     bool charging = chargerIsConnected();
     float km = distanceKm();
     updateScooterOutputState();
@@ -652,7 +726,7 @@ void loop()
 
     if (millis() - lastTelemetryMs >= 1000) {
         lastTelemetryMs = millis();
-        Serial.printf("Computed battery voltage: %.3fV\n", readScooterVoltage()); // TEMP: remove after calibration
+        Serial.printf("Computed battery voltage: %.3fV\n", cachedScooterVoltage()); // TEMP: remove after calibration
         sendTelemetry();
     }
 
