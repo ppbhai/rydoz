@@ -25,13 +25,25 @@ const uint8_t CHARGER_SENSE_PIN = 35;    // HIGH when charger input voltage is p
 const uint8_t ESP_POWER_HOLD_PIN = 32;   // optional latch/enable line for IoT power switch
 const uint8_t SCOOTER_ON_SENSE_PIN = 33; // feed 3.3V HIGH only while scooter/controller output is actually ON
 
-const float WHEEL_CIRCUMFERENCE_M = 0.69f;
+// Round 2: re-rode the same 200m/400m test on 0.439f - 200m showed 191m,
+// 400m showed 377m (overall under-report ratio ~0.9467x this time).
+// Corrected = 0.439 / 0.9467. Both rides now land within ~1% of real
+// distance at 0.464f. Still needs the hall pulses-per-rev spin-test to
+// confirm whether any remaining drift belongs here or in
+// HALL_PULSES_PER_REV - revisit once that's verified.
+const float WHEEL_CIRCUMFERENCE_M = 0.464f;
 const uint8_t HALL_PULSES_PER_REV = 15;
 const float ADC_REF_V = 3.30f;
 const float ADC_MAX = 4095.0f;
 const float DIVIDER_R_TOP = 150000.0f;
 const float DIVIDER_R_BOTTOM = 10000.0f;
 const float DIVIDER_RATIO = (DIVIDER_R_TOP + DIVIDER_R_BOTTOM) / DIVIDER_R_BOTTOM;
+// Multimeter confirmed the divider itself is accurate (GPIO34 measured
+// 2.57-2.64V against a theoretical 2.5812V for a true 41.3V battery), so
+// the remaining ~3.46% low reading is the ESP32's own ADC gain error, not
+// the divider. Correcting it here means the % thresholds below can stay at
+// their true physical voltages instead of being fudged to compensate.
+const float ADC_VOLTAGE_CORRECTION = 1.0346f;
 const uint32_t SCOOTER_ON_SENSE_GRACE_MS = 5000;
 const uint32_t SCOOTER_ON_SENSE_OFF_DEBOUNCE_MS = 1000;
 const bool USE_POWER_RELAY_CONTROL = true; // GPIO26 controls the MOSFET on the display/controller ground line.
@@ -88,13 +100,16 @@ float readScooterVoltage()
 
     float adc = total / 16.0f;
     float pinVoltage = (adc / ADC_MAX) * ADC_REF_V;
-    return pinVoltage * DIVIDER_RATIO;
+    return pinVoltage * DIVIDER_RATIO * ADC_VOLTAGE_CORRECTION;
 }
 
 uint8_t voltageToPercent(float voltage)
 {
     // Calibrated against two measured reference points instead of assuming
     // a straight 0%-100% pack range: 33.0V reads as 10%, 41.3V reads as 100%.
+    // These are the TRUE physical voltages (multimeter-measured) - the ADC's
+    // own reading error is now corrected upstream in readScooterVoltage(),
+    // so these no longer need to be fudged to compensate for it.
     const float refLowV = 33.0f;
     const float refLowPercent = 10.0f;
     const float refHighV = 41.3f;
@@ -637,6 +652,7 @@ void loop()
 
     if (millis() - lastTelemetryMs >= 1000) {
         lastTelemetryMs = millis();
+        Serial.printf("Computed battery voltage: %.3fV\n", readScooterVoltage()); // TEMP: remove after calibration
         sendTelemetry();
     }
 
