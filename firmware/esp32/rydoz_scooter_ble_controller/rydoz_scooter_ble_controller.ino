@@ -35,17 +35,28 @@ const uint8_t SCOOTER_ON_SENSE_PIN = 33; // feed 3.3V HIGH only while scooter/co
 // HALL_PULSES_PER_REV - revisit once that's verified.
 const float WHEEL_CIRCUMFERENCE_M = 0.464f;
 const uint8_t HALL_PULSES_PER_REV = 15;
-const float ADC_REF_V = 3.30f;
-const float ADC_MAX = 4095.0f;
 const float DIVIDER_R_TOP = 150000.0f;
 const float DIVIDER_R_BOTTOM = 10000.0f;
 const float DIVIDER_RATIO = (DIVIDER_R_TOP + DIVIDER_R_BOTTOM) / DIVIDER_R_BOTTOM;
-// Multimeter confirmed the divider itself is accurate (GPIO34 measured
-// 2.57-2.64V against a theoretical 2.5812V for a true 41.3V battery), so
-// the remaining ~3.46% low reading is the ESP32's own ADC gain error, not
-// the divider. Correcting it here means the % thresholds below can stay at
-// their true physical voltages instead of being fudged to compensate.
-const float ADC_VOLTAGE_CORRECTION = 1.0346f;
+// Voltage comes from analogReadMilliVolts(), which applies this chip's factory
+// eFuse ADC calibration. That replaced a hardcoded 3.30V reference (wrong for
+// ADC_11db, whose full scale is ~3.9V) plus a 1.0346 gain factor trimmed at a
+// full pack - a combination that read 2.3V low mid-pack, showing 52% as 27%.
+//
+// A residual trim is still needed because two errors partly cancel here:
+//   - The divider resistors are 150k/10k but only +/-5% (gold band), so the
+//     real ratio is not the ideal 16.000 assumed above. Measured in circuit at
+//     GPIO34: 2.11-2.13V against a 36.8V pack, i.e. closer to 17.4:1, though a
+//     multimeter's own impedance loads a 150k divider and exaggerates that.
+//   - The pin sits near 2.1-2.4V, the top of ADC_11db's usable range, where the
+//     ADC stays somewhat non-linear even after eFuse correction.
+// Rather than guess a split, this trims the end-to-end result: ESP reported
+// 37.92V against a true 36.8-36.9V, so 36.85/37.92 = 0.9718.
+//
+// Re-verify at a low and a high pack voltage after any divider rework. If the
+// error is no longer a constant percentage, a single factor cannot fix it and
+// the divider values themselves should be measured out of circuit instead.
+const float ADC_VOLTAGE_CORRECTION = 0.9718f;
 const uint32_t SCOOTER_ON_SENSE_GRACE_MS = 5000;
 const uint32_t SCOOTER_ON_SENSE_OFF_DEBOUNCE_MS = 1000;
 const bool USE_POWER_RELAY_CONTROL = true; // GPIO26 controls the MOSFET on the display/controller ground line.
@@ -54,11 +65,11 @@ const uint32_t FREE_TRIAL_DISTANCE_GRACE_MS = 5000;
 const float FREE_TRIAL_LIMIT_KM = 0.100f;
 const uint8_t MIN_START_BATTERY_PERCENT = 10;
 const bool DEBUG_SCOOTER_ON_SENSE = true; // Set false after GPIO33 testing is complete.
-// One ADC count is ~0.207V at the battery, which the 10.84%/V slope below turns
-// into ~2.2 percentage points. So 1-2 counts of normal SAR ADC noise is enough to
-// visibly swing the reported percentage even when the pack voltage is rock steady.
-// A median rejects the outlier counts that drag a plain mean, and sampling across
-// a wider window catches slower drift that a 32ms burst cannot.
+// The 16:1 divider and the 10.84%/V slope below amplify small ADC errors hard:
+// 1mV at the pin is ~0.016V at the battery, so a few tens of mV of SAR noise
+// moves the reported percentage by a point or more even on a steady pack. A
+// median rejects the outlier samples that drag a plain mean, and spreading the
+// samples catches slower drift that a single short burst cannot.
 const uint8_t VOLTAGE_SAMPLE_COUNT = 21;
 const uint32_t VOLTAGE_SAMPLE_DELAY_MS = 4;
 // Sampling now blocks ~84ms, so cache it: re-reading per caller would stall loop()
@@ -128,7 +139,7 @@ float readScooterVoltage()
     uint16_t samples[VOLTAGE_SAMPLE_COUNT];
 
     for (uint8_t i = 0; i < VOLTAGE_SAMPLE_COUNT; i++) {
-        samples[i] = (uint16_t)analogRead(BATTERY_ADC_PIN);
+        samples[i] = (uint16_t)analogReadMilliVolts(BATTERY_ADC_PIN);
         delay(VOLTAGE_SAMPLE_DELAY_MS);
     }
 
@@ -146,8 +157,7 @@ float readScooterVoltage()
         samples[j + 1] = current;
     }
 
-    const float adc = (float)samples[VOLTAGE_SAMPLE_COUNT / 2];
-    const float pinVoltage = (adc / ADC_MAX) * ADC_REF_V;
+    const float pinVoltage = samples[VOLTAGE_SAMPLE_COUNT / 2] / 1000.0f;
     return pinVoltage * DIVIDER_RATIO * ADC_VOLTAGE_CORRECTION;
 }
 
@@ -168,8 +178,8 @@ uint8_t voltageToPercent(float voltage)
     // Calibrated against two measured reference points instead of assuming
     // a straight 0%-100% pack range: 33.0V reads as 10%, 41.3V reads as 100%.
     // These are the TRUE physical voltages (multimeter-measured) - the ADC's
-    // own reading error is now corrected upstream in readScooterVoltage(),
-    // so these no longer need to be fudged to compensate for it.
+    // own reading error is corrected upstream in readScooterVoltage() via the
+    // chip's eFuse calibration, so these need no fudging to compensate for it.
     const float refLowV = 33.0f;
     const float refLowPercent = 10.0f;
     const float refHighV = 41.3f;
