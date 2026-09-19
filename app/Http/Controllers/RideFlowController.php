@@ -1272,7 +1272,18 @@ class RideFlowController extends Controller
             return null;
         }
 
-        return max(0, (int) round((float) $value));
+        $seconds = max(0, (int) round((float) $value));
+
+        // A scooter that genuinely ran never reports zero: the firmware floors a
+        // captured on-time at one second. A zero therefore means the controller
+        // lost its counter (it rebooted mid-ride and had nothing stored) rather
+        // than that the ride took no time, so record it as "no reading" instead
+        // of a measurement staff would read as a real 00:00:00.
+        if ($seconds === 0) {
+            return null;
+        }
+
+        return $seconds;
     }
 
     protected function bookingReadyForPayment(Collection $rides): bool

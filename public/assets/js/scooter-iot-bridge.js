@@ -452,7 +452,12 @@
 
         const seconds = Number(value);
 
-        return Number.isFinite(seconds) && seconds >= 0 ? Math.round(seconds) : null;
+        // Zero is rejected rather than accepted as a measurement: the firmware
+        // floors a real captured on-time at one second, so a zero means the
+        // controller lost its counter (it rebooted mid-ride with nothing
+        // stored), not that the ride took no time. Treating it as a reading
+        // would overwrite a good value with 0 and save a false 00:00:00.
+        return Number.isFinite(seconds) && seconds > 0 ? Math.round(seconds) : null;
     }
 
     function telemetryCharging(data) {
@@ -626,7 +631,18 @@
             await wait(600);
         }
 
-        return telemetry || fallbackTelemetry;
+        // `telemetry || fallbackTelemetry` alone never reached the fallback:
+        // refreshTelemetry() returns its own remembered reading rather than
+        // null when a BLE read fails, so the last attempt is almost always a
+        // truthy object - including one from a controller that rebooted and
+        // reports nothing useful. Prefer whichever reading actually carries
+        // values, so a usable pre-STOP reading is not discarded.
+        const attemptScore = (data) =>
+            (telemetryKm(data) !== null ? 1 : 0) + (telemetryActualSeconds(data) !== null ? 1 : 0);
+
+        return attemptScore(telemetry) >= attemptScore(fallbackTelemetry)
+            ? (telemetry || fallbackTelemetry)
+            : fallbackTelemetry;
     }
 
     function wait(ms) {

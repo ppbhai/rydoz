@@ -9,6 +9,7 @@
 
 #include <Arduino.h>
 #include <NimBLEDevice.h>
+#include <Preferences.h>
 #include <string.h>
 #include <esp_sleep.h>
 #include <driver/rtc_io.h>
@@ -90,6 +91,43 @@ const uint64_t DEEP_SLEEP_TIMER_WAKE_US = 300ULL * 1000000ULL;
 const uint32_t DEEP_SLEEP_POST_WAKE_SETTLE_MS = 250;
 const bool DEBUG_DEEP_SLEEP = true;
 
+// Mid-ride low-voltage cutoff. Sits 1V above DEEP_SLEEP_VOLTAGE_THRESHOLD so a
+// ride is always ended before the board would consider sleeping, and matches
+// DEEP_SLEEP_WAKE_VOLTAGE_THRESHOLD so a pack that cannot hold 31V is treated
+// the same whether it sagged during a ride or after a wake.
+//
+// A motor under load sags the pack well below its resting voltage and it
+// recovers on coast, so a single sample must never cut a ride: require the
+// reading to stay low for RIDE_CUTOFF_CONFIRM_COUNT consecutive samples spaced
+// RIDE_CUTOFF_SAMPLE_INTERVAL_MS apart (~8s), which outlasts an acceleration
+// sag but still stops well before the pack reaches the sleep threshold.
+const float RIDE_LOW_VOLTAGE_CUTOFF = 31.0f;
+const uint32_t RIDE_CUTOFF_SAMPLE_INTERVAL_MS = 1000;
+const uint8_t RIDE_CUTOFF_CONFIRM_COUNT = 8;
+// Same broken-divider guard updateLowVoltageDeepSleep() uses: a disconnected or
+// shorted divider reads near zero and must not cut a healthy ride.
+const float RIDE_CUTOFF_IMPLAUSIBLE_VOLTAGE = DEEP_SLEEP_IMPLAUSIBLE_VOLTAGE;
+// After a low-voltage cutoff the pack sits near the sleep threshold with no ride
+// active, so deep sleep would normally take the board down ~30s later and staff
+// could no longer read the final on-time over BLE. Hold sleep off this long so
+// the ride can still be completed from the app. The on-time is persisted either
+// way, but this keeps the normal (non-recovery) path working.
+const uint32_t RIDE_CUTOFF_STAY_AWAKE_MS = 300000;
+
+// Ride state is kept in RAM, which a battery disconnect erases: the board then
+// boots with rideActive=false and a zeroed counter, so a ride interrupted by a
+// power cut reported 0 seconds and 0 km. Mirror the counters into NVS while a
+// ride runs and restore them on boot so an interrupted ride resumes its totals
+// instead of restarting them.
+const char *RIDE_STATE_NAMESPACE = "rydoz";
+const char *RIDE_STATE_KEY_ACTIVE = "ride_on";
+const char *RIDE_STATE_KEY_SECONDS = "ride_secs";
+const char *RIDE_STATE_KEY_PULSES = "ride_pulses";
+// 10s bounds worst-case loss to ~10 seconds of on-time. At a few rides a day
+// this is a few hundred writes a day against NVS wear levelling over a ~100k
+// endurance flash sector, i.e. far inside the hardware's life.
+const uint32_t RIDE_STATE_SAVE_INTERVAL_MS = 10000;
+
 volatile uint32_t hallPulses = 0;
 volatile uint32_t lastHallMicros = 0;
 
@@ -121,6 +159,16 @@ uint8_t lowVoltageSampleCount = 0;
 uint32_t lastLowVoltageSampleMs = 0;
 float lastKnownVoltage = 0.0f;
 bool wokeFromDeepSleep = false;
+uint8_t rideCutoffSampleCount = 0;
+uint32_t lastRideCutoffSampleMs = 0;
+uint32_t rideCutoffStoppedAtMs = 0;
+// Hall pulses carried over from a ride that a power cut interrupted, so the
+// trip distance resumes instead of restarting. On-time needs no equivalent:
+// an interrupted ride is not resumed as active, and its stored seconds load
+// straight into actualScooterOnSeconds.
+uint32_t restoredPulseBase = 0;
+uint32_t lastRideStateSaveMs = 0;
+Preferences ridePreferences;
 
 void IRAM_ATTR onHallPulse()
 {
@@ -306,7 +354,10 @@ float distanceKm()
     pulses = hallPulses;
     interrupts();
 
-    float revolutions = pulses / (float)HALL_PULSES_PER_REV;
+    // restoredPulseBase carries the distance of a ride that a power cut
+    // interrupted; it is zero for an uninterrupted ride and is cleared by
+    // RESET_KM and by a fresh START.
+    float revolutions = (restoredPulseBase + pulses) / (float)HALL_PULSES_PER_REV;
     return (revolutions * WHEEL_CIRCUMFERENCE_M) / 1000.0f;
 }
 
@@ -376,6 +427,10 @@ void printScooterSenseMonitor()
         (unsigned long)scooterOnSeconds());
 }
 
+// Defined below with the rest of the ride-state persistence, declared here
+// because scooterOn() marks a ride active in NVS as soon as it starts.
+void persistRideState(bool markActive);
+
 void scooterOn()
 {
     if (USE_POWER_RELAY_CONTROL && rideActive && scooterOutputWasOn) {
@@ -404,12 +459,22 @@ void scooterOn()
     scooterSenseConfirmedOn = false;
     rideStartMs = millis();
     actualScooterOnSeconds = 0;
+    // A START always begins a new ride, so anything recovered from an earlier
+    // interrupted ride must not be carried into this one's totals.
+    restoredPulseBase = 0;
     freeTrialActive = false;
     freeTrialStartMs = 0;
     freeTrialStartPulses = 0;
     freeTrialStopReason = "none";
     scooterSenseLowSinceMs = 0;
     lastScooterSenseDebugMs = 0;
+    rideCutoffSampleCount = 0;
+    lastRideCutoffSampleMs = 0;
+    rideCutoffStoppedAtMs = 0;
+
+    // Mark the ride active in NVS immediately: a cut seconds after START must
+    // still be recognised as an interrupted ride on the next boot.
+    persistRideState(true);
 
     if (scooterOutputIsOnStable()) {
         scooterSenseConfirmedOn = true;
@@ -438,6 +503,9 @@ void startFreeTrial()
     lastHallMicros = 0;
     interrupts();
 
+    // Matches the hallPulses reset above: a trial always measures its own
+    // distance from zero, never a recovered ride's.
+    restoredPulseBase = 0;
     lastPulseSnapshot = 0;
     speedKph = 0.0f;
     freeTrialActive = true;
@@ -460,8 +528,80 @@ uint32_t scooterOnSeconds()
 void captureScooterOnSeconds()
 {
     if (rideActive && scooterOutputWasOn && rideStartMs > 0) {
-        actualScooterOnSeconds = max(1UL, (millis() - rideStartMs) / 1000UL);
+        actualScooterOnSeconds = max(1UL, (unsigned long)scooterOnSeconds());
     }
+}
+
+// --- Ride state persistence (survives a battery disconnect) ------------------
+
+// `markActive` is false when saving the final totals of a ride that has just
+// ended: the numbers stay readable for a later Complete, but a reboot will not
+// treat the ride as still running.
+void persistRideState(bool markActive)
+{
+    if (!ridePreferences.begin(RIDE_STATE_NAMESPACE, false)) {
+        Serial.println("NVS: save failed, could not open namespace.");
+        return;
+    }
+
+    const uint32_t seconds = scooterOnSeconds();
+    const uint32_t pulses = restoredPulseBase + hallPulseSnapshot();
+
+    ridePreferences.putBool(RIDE_STATE_KEY_ACTIVE, markActive);
+    ridePreferences.putUInt(RIDE_STATE_KEY_SECONDS, seconds);
+    ridePreferences.putUInt(RIDE_STATE_KEY_PULSES, pulses);
+    ridePreferences.end();
+
+    lastRideStateSaveMs = millis();
+}
+
+void updateRideStatePersistence()
+{
+    if (!rideActive || !scooterOutputWasOn || rideStartMs == 0) {
+        return;
+    }
+
+    if (millis() - lastRideStateSaveMs < RIDE_STATE_SAVE_INTERVAL_MS) {
+        return;
+    }
+
+    persistRideState(true);
+}
+
+// Called from setup() before BLE starts. If the last boot was cut mid-ride,
+// resume that ride's totals so the app still reads the real on-time and km.
+void restoreRideStateIfInterrupted()
+{
+    if (!ridePreferences.begin(RIDE_STATE_NAMESPACE, true)) {
+        Serial.println("NVS: no stored ride state (namespace missing), starting clean.");
+        return;
+    }
+
+    const bool wasActive = ridePreferences.getBool(RIDE_STATE_KEY_ACTIVE, false);
+    const uint32_t storedSeconds = ridePreferences.getUInt(RIDE_STATE_KEY_SECONDS, 0);
+    const uint32_t storedPulses = ridePreferences.getUInt(RIDE_STATE_KEY_PULSES, 0);
+    ridePreferences.end();
+
+    if (!wasActive) {
+        // A ride that ended normally still leaves its final totals behind so a
+        // Complete after a reboot can report them rather than zeros.
+        actualScooterOnSeconds = storedSeconds;
+        restoredPulseBase = storedPulses;
+        return;
+    }
+
+    // The scooter's own output is off after a power cut, so do not claim the
+    // ride is still running - that would restart the stopwatch against a
+    // scooter that is not on. With rideActive false, scooterOnSeconds()
+    // reports actualScooterOnSeconds directly, so loading the stored seconds
+    // there is enough; a later START deliberately begins a new ride at zero.
+    restoredPulseBase = storedPulses;
+    actualScooterOnSeconds = storedSeconds;
+
+    Serial.printf(
+        "NVS: ride was interrupted by power loss, restored on-time=%lus km-pulses=%lu\n",
+        (unsigned long)storedSeconds,
+        (unsigned long)storedPulses);
 }
 
 void updateScooterOutputState()
@@ -511,6 +651,9 @@ void updateScooterOutputState()
     if (millis() - scooterSenseLowSinceMs >= SCOOTER_ON_SENSE_OFF_DEBOUNCE_MS) {
         captureScooterOnSeconds();
         scooterOutputWasOn = false;
+        // The scooter turned itself off (rider button, controller cutout). The
+        // ride is over, so store the final totals and stop marking it active.
+        persistRideState(false);
         Serial.printf(
             "Scooter output OFF detected, actual on time=%lu seconds\n",
             (unsigned long)actualScooterOnSeconds);
@@ -520,6 +663,11 @@ void updateScooterOutputState()
 void scooterOff()
 {
     captureScooterOnSeconds();
+
+    // Freeze the totals in NVS before any of the exits below. captureScooterOnSeconds()
+    // has already stopped the clock, so every return path stores the same final
+    // value, and the ride is no longer marked active for the next boot.
+    persistRideState(false);
 
     if (freeTrialActive && strcmp(freeTrialStopReason, "running") == 0) {
         freeTrialStopReason = "manual";
@@ -559,6 +707,95 @@ void scooterOff()
     Serial.printf(
         "STOP completed: button pressed, stored actual on time=%lu seconds\n",
         (unsigned long)actualScooterOnSeconds);
+}
+
+// Defined below; declared here so the cutoff can publish the stopped state
+// immediately rather than waiting for loop()'s next 1s telemetry tick.
+void sendTelemetry();
+
+// Force-stops a running ride once the pack can no longer hold
+// RIDE_LOW_VOLTAGE_CUTOFF, so a rider cannot flatten a battery below the level
+// it can recover from. Nothing previously stopped a ride on voltage: the 10%
+// check only gated START, and deep sleep is suppressed while a ride is active.
+void updateRideLowVoltageCutoff()
+{
+    if (!rideActive || !scooterOutputWasOn) {
+        rideCutoffSampleCount = 0;
+        return;
+    }
+
+    // A charger on the scooter holds the rail up and makes the pack reading
+    // meaningless for this decision.
+    if (chargerIsConnected()) {
+        rideCutoffSampleCount = 0;
+        return;
+    }
+
+    // The free trial has its own 60s/100m stop and runs far too short to
+    // meaningfully drain a pack; leave that flow exactly as it was.
+    if (freeTrialActive) {
+        rideCutoffSampleCount = 0;
+        return;
+    }
+
+    if (millis() - lastRideCutoffSampleMs < RIDE_CUTOFF_SAMPLE_INTERVAL_MS) {
+        return;
+    }
+
+    lastRideCutoffSampleMs = millis();
+
+    // loop() refreshes this once a second for telemetry; fall back to our own
+    // read so the cutoff cannot be silently disabled if that changes.
+    const float voltage = lastKnownVoltage > 0.0f ? lastKnownVoltage : cachedScooterVoltage();
+
+    if (voltage < RIDE_CUTOFF_IMPLAUSIBLE_VOLTAGE) {
+        if (DEBUG_DEEP_SLEEP) {
+            Serial.printf("Ride cutoff skipped: implausible voltage reading %.2fV\n", voltage);
+        }
+
+        rideCutoffSampleCount = 0;
+        return;
+    }
+
+    if (voltage > RIDE_LOW_VOLTAGE_CUTOFF) {
+        if (rideCutoffSampleCount > 0 && DEBUG_DEEP_SLEEP) {
+            Serial.printf(
+                "Ride cutoff countdown reset: %.2fV recovered above %.2fV\n",
+                voltage,
+                RIDE_LOW_VOLTAGE_CUTOFF);
+        }
+
+        rideCutoffSampleCount = 0;
+        return;
+    }
+
+    rideCutoffSampleCount++;
+
+    if (DEBUG_DEEP_SLEEP) {
+        Serial.printf(
+            "Ride low voltage %.2fV <= %.2fV, confirmation %u/%u\n",
+            voltage,
+            RIDE_LOW_VOLTAGE_CUTOFF,
+            rideCutoffSampleCount,
+            RIDE_CUTOFF_CONFIRM_COUNT);
+    }
+
+    if (rideCutoffSampleCount < RIDE_CUTOFF_CONFIRM_COUNT) {
+        return;
+    }
+
+    Serial.printf(
+        "RIDE AUTO STOP: battery %.2fV stayed at or below %.2fV for %u seconds, stopping scooter.\n",
+        voltage,
+        RIDE_LOW_VOLTAGE_CUTOFF,
+        (unsigned int)((RIDE_CUTOFF_CONFIRM_COUNT * RIDE_CUTOFF_SAMPLE_INTERVAL_MS) / 1000UL));
+
+    // scooterOff() freezes and persists the on-time, so the ride can still be
+    // completed with the correct duration afterwards.
+    scooterOff();
+    rideCutoffSampleCount = 0;
+    rideCutoffStoppedAtMs = millis();
+    sendTelemetry();
 }
 
 void updateFreeTrialAutoStop()
@@ -707,6 +944,14 @@ void updateLowVoltageDeepSleep()
         return;
     }
 
+    // A low-voltage cutoff leaves the pack just above the sleep threshold with
+    // no ride active, so the board would otherwise sleep ~30s later and staff
+    // could no longer read the final on-time over BLE. Stay awake briefly so
+    // the ride can still be completed from the app.
+    if (rideCutoffStoppedAtMs > 0 && millis() - rideCutoffStoppedAtMs < RIDE_CUTOFF_STAY_AWAKE_MS) {
+        return;
+    }
+
     if (millis() - lastLowVoltageSampleMs < DEEP_SLEEP_LOW_VOLTAGE_SAMPLE_INTERVAL_MS) {
         return;
     }
@@ -788,6 +1033,9 @@ class CommandCallbacks : public NimBLECharacteristicCallbacks
             noInterrupts();
             hallPulses = 0;
             interrupts();
+            // Also drop any distance recovered from an interrupted ride, so a
+            // reset really does start the trip from zero.
+            restoredPulseBase = 0;
         }
 
         sendTelemetry();
@@ -929,6 +1177,10 @@ void setup()
 
     applyPostWakeBatteryDecision();
 
+    // Before BLE comes up, so the first telemetry an app can read already
+    // carries the totals of a ride that a power cut interrupted.
+    restoreRideStateIfInterrupted();
+
     setupBle();
 }
 
@@ -943,6 +1195,14 @@ void loop()
         Serial.printf("Computed battery voltage: %.3fV\n", lastKnownVoltage); // TEMP: remove after calibration
         sendTelemetry();
     }
+
+    // After the telemetry read above, so the cutoff always judges a fresh
+    // voltage rather than one up to a second old.
+    updateRideLowVoltageCutoff();
+
+    // Mirror the running ride's totals to NVS so a battery disconnect cannot
+    // erase them.
+    updateRideStatePersistence();
 
     if (!bleClientConnected && millis() - lastAdvertisementMs >= 10000) {
         lastAdvertisementMs = millis();
