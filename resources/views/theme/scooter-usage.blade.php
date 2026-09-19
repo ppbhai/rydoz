@@ -52,7 +52,7 @@
                         </div>
                     @empty
                         <div class="nearby-scooter-empty">
-                            No scooter assigned today.
+                            No vehicle assigned yet.
                         </div>
                     @endforelse
                 </div>

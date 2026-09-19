@@ -92,14 +92,47 @@ class RideFlowController extends Controller
         $branch = $this->currentBranch();
         abort_unless($branch, 403);
 
-        $assignedScooters = BookingRide::query()
+        // Today's assignments, which supply the usage count.
+        $todaysAssignments = BookingRide::query()
             ->selectRaw('branch_vehicle_id, vehicle_name, ride_number, count(*) as assign_count, max(start_time) as last_assigned_at')
             ->whereNotNull('ride_number')
             ->where('ride_number', '!=', '')
             ->whereDate('start_time', today())
             ->whereHas('booking', fn ($query) => $query->where('branch_id', $branch->id))
             ->groupBy('branch_vehicle_id', 'vehicle_name', 'ride_number')
+            ->get()
+            ->keyBy(fn ($scooter) => $this->scooterUsageKey($scooter->branch_vehicle_id, $scooter->ride_number));
+
+        // The branch's known scooters. There is no registry of individual
+        // scooters - ride_number is free text captured at assign time - so the
+        // fleet is derived from every number ever assigned at this branch.
+        // Without this the screen listed only scooters used today, hiding the
+        // idle ones that the least-used-first sort is meant to surface.
+        //
+        // Identity is (branch_vehicle_id, ride_number), matching both the
+        // grouping above and rideNumberAlreadyAssigned(), which scopes
+        // uniqueness per vehicle type. It also keeps the vehicle tab filter
+        // working, since each row needs a branch_vehicle_id.
+        $knownScooters = BookingRide::query()
+            ->selectRaw('branch_vehicle_id, vehicle_name, ride_number, max(start_time) as last_assigned_at')
+            ->whereNotNull('ride_number')
+            ->where('ride_number', '!=', '')
+            ->whereHas('booking', fn ($query) => $query->where('branch_id', $branch->id))
+            ->groupBy('branch_vehicle_id', 'vehicle_name', 'ride_number')
             ->get();
+
+        $assignedScooters = $knownScooters->map(function ($scooter) use ($todaysAssignments) {
+            $today = $todaysAssignments->get(
+                $this->scooterUsageKey($scooter->branch_vehicle_id, $scooter->ride_number)
+            );
+
+            // A scooter with no ride today keeps its historical row but reports
+            // zero usage, rather than being left out of the list entirely.
+            $scooter->assign_count = $today ? (int) $today->assign_count : 0;
+            $scooter->last_assigned_at = $today->last_assigned_at ?? $scooter->last_assigned_at;
+
+            return $scooter;
+        });
 
         $ongoingScooters = BookingRide::query()
             ->where('status', 'ongoing')
@@ -115,10 +148,17 @@ class RideFlowController extends Controller
         });
 
         // Least-used scooters surface first; an ongoing ride is pushed to the
-        // bottom of the list even if it has the lowest 24h usage count, since
+        // bottom of the list even if it has the lowest usage count today, since
         // staff can't hand it out right now anyway.
+        //
+        // Idle scooters now all share a count of 0, so sort by ride number
+        // within a count to keep the list in a stable, readable order instead
+        // of whatever order the database returned.
         $assignedScooters = $assignedScooters
-            ->sortBy(fn ($scooter) => ($scooter->usage_status === 'ongoing' ? 1000000 : 0) + (int) $scooter->assign_count)
+            ->sortBy([
+                fn ($scooter) => ($scooter->usage_status === 'ongoing' ? 1000000 : 0) + (int) $scooter->assign_count,
+                fn ($scooter) => mb_strtolower((string) $scooter->ride_number),
+            ])
             ->values();
 
         $vehicles = $this->branchVehicles($branch);
@@ -1117,6 +1157,16 @@ class RideFlowController extends Controller
 
                 return $vehicle;
             });
+    }
+
+    // Identifies one scooter on the usage screen. ride_number is free text, so
+    // it is lowercased to keep "SC-001" and "sc-001" on a single row; the
+    // vehicle type is part of the key because rideNumberAlreadyAssigned()
+    // scopes uniqueness per type, meaning the same number under two types is
+    // genuinely two scooters.
+    protected function scooterUsageKey($branchVehicleId, $rideNumber): string
+    {
+        return ($branchVehicleId ?? 'none') . '|' . mb_strtolower(trim((string) $rideNumber));
     }
 
     protected function branchVehicles(Branch $branch): Collection
