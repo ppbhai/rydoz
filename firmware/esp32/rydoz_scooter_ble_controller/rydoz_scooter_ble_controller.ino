@@ -82,12 +82,12 @@ const uint8_t BATTERY_PERCENT_HYSTERESIS = 2;
 const float DEEP_SLEEP_VOLTAGE_THRESHOLD = 30.0f;
 // Resume needs 1V of headroom above the sleep threshold so a pack resting near
 // 30V cannot sleep/wake/sleep in a loop that burns more power than it saves.
-const float DEEP_SLEEP_WAKE_VOLTAGE_THRESHOLD = 31.0f;
+const float DEEP_SLEEP_WAKE_VOLTAGE_THRESHOLD = 30.2f;
 const float DEEP_SLEEP_IMPLAUSIBLE_VOLTAGE = 5.0f;
 const uint32_t DEEP_SLEEP_LOW_VOLTAGE_SAMPLE_INTERVAL_MS = 2000;
 const uint8_t DEEP_SLEEP_LOW_VOLTAGE_CONFIRM_COUNT = 15;
 const uint32_t DEEP_SLEEP_BOOT_GRACE_MS = 20000;
-const uint64_t DEEP_SLEEP_TIMER_WAKE_US = 300ULL * 1000000ULL;
+const uint64_t DEEP_SLEEP_TIMER_WAKE_US = 1800ULL * 1000000ULL;
 const uint32_t DEEP_SLEEP_POST_WAKE_SETTLE_MS = 250;
 const bool DEBUG_DEEP_SLEEP = true;
 
