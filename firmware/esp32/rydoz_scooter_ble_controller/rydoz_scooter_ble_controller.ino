@@ -65,7 +65,11 @@ const uint32_t FREE_TRIAL_LIMIT_MS = 60000;
 const uint32_t FREE_TRIAL_DISTANCE_GRACE_MS = 5000;
 const float FREE_TRIAL_LIMIT_KM = 0.100f;
 const uint8_t MIN_START_BATTERY_PERCENT = 10;
-const bool DEBUG_SCOOTER_ON_SENSE = true; // Set false after GPIO33 testing is complete.
+const bool DEBUG_SCOOTER_ON_SENSE = false; // GPIO33 testing is complete; this polled the pin 10x/second.
+// Serial costs real current on a board whose USB-UART bridge stays powered, and
+// the per-second prints were calibration aids, not diagnostics. Set true to get
+// the verbose boot/telemetry/voltage logging back while bench testing.
+const bool DEBUG_VERBOSE_LOGS = false;
 // The 16:1 divider and the 10.84%/V slope below amplify small ADC errors hard:
 // 1mV at the pin is ~0.016V at the battery, so a few tens of mV of SAR noise
 // moves the reported percentage by a point or more even on a steady pack. A
@@ -89,7 +93,11 @@ const uint8_t DEEP_SLEEP_LOW_VOLTAGE_CONFIRM_COUNT = 15;
 const uint32_t DEEP_SLEEP_BOOT_GRACE_MS = 20000;
 const uint64_t DEEP_SLEEP_TIMER_WAKE_US = 1800ULL * 1000000ULL;
 const uint32_t DEEP_SLEEP_POST_WAKE_SETTLE_MS = 250;
-const bool DEBUG_DEEP_SLEEP = true;
+// Gates the per-sample countdown chatter from both the deep-sleep guard (every
+// 2s while a pack is low) and the ride cutoff (every 1s during a ride). The
+// decisions themselves still log unconditionally, so a scooter that sleeps or
+// cuts out always leaves a serial trace. Set true for bench diagnosis.
+const bool DEBUG_DEEP_SLEEP = false;
 
 // Mid-ride low-voltage cutoff. Sits 1V above DEEP_SLEEP_VOLTAGE_THRESHOLD so a
 // ride is always ended before the board would consider sleeping, and matches
@@ -127,6 +135,26 @@ const char *RIDE_STATE_KEY_PULSES = "ride_pulses";
 // this is a few hundred writes a day against NVS wear levelling over a ~100k
 // endurance flash sector, i.e. far inside the hardware's life.
 const uint32_t RIDE_STATE_SAVE_INTERVAL_MS = 10000;
+
+// Idle power. A parked scooter with no ride and no app connected used to do the
+// same work every second as one mid-ride: a 21-sample ADC read (~84ms of
+// delay()) plus a telemetry notify with nobody subscribed. Nothing watches that
+// output, and a resting pack moves far too slowly to need per-second readings,
+// so idle falls back to a slower cadence. The instant a ride starts or an app
+// connects, ACTIVE applies again and behaviour is identical to before.
+const uint32_t TELEMETRY_INTERVAL_ACTIVE_MS = 1000;
+const uint32_t TELEMETRY_INTERVAL_IDLE_MS = 5000;
+// Advertisement payload only carries battery/charging, which the slower idle
+// telemetry already refreshes; rebuilding it faster than that cannot change it.
+const uint32_t ADVERTISEMENT_INTERVAL_ACTIVE_MS = 10000;
+const uint32_t ADVERTISEMENT_INTERVAL_IDLE_MS = 30000;
+// BLE advertising interval in 0.625ms units, as the controller expects. The
+// radio only transmits for ~1-2ms per burst, so widening the gap between bursts
+// cuts radio-on time proportionally. 1600 = 1.0s, 3200 = 2.0s; NimBLE's default
+// is ~1.28s. 2s keeps a scooter discoverable within one scan window while
+// roughly halving burst count against the default.
+const uint16_t BLE_ADV_INTERVAL_MIN = 2400; // 1.5s
+const uint16_t BLE_ADV_INTERVAL_MAX = 3200; // 2.0s
 
 volatile uint32_t hallPulses = 0;
 volatile uint32_t lastHallMicros = 0;
@@ -338,13 +366,18 @@ void updateNearbyAdvertisement()
         dataRefreshed = bleAdvertising->refreshAdvertisingData();
     }
 
-    Serial.printf(
-        "Nearby advertisement: id=%s battery=%u%% charging=%s set=%s refresh=%s\n",
-        SCOOTER_ID,
-        batteryPercent,
-        charging ? "yes" : "no",
-        dataSet ? "ok" : "failed",
-        dataRefreshed ? "ok" : "failed");
+    // This ran every 10s for the life of the board. Keep it for bench work,
+    // but an idle scooter should not be formatting and pushing serial output
+    // around the clock.
+    if (DEBUG_VERBOSE_LOGS) {
+        Serial.printf(
+            "Nearby advertisement: id=%s battery=%u%% charging=%s set=%s refresh=%s\n",
+            SCOOTER_ID,
+            batteryPercent,
+            charging ? "yes" : "no",
+            dataSet ? "ok" : "failed",
+            dataRefreshed ? "ok" : "failed");
+    }
 }
 
 float distanceKm()
@@ -744,9 +777,10 @@ void updateRideLowVoltageCutoff()
 
     lastRideCutoffSampleMs = millis();
 
-    // loop() refreshes this once a second for telemetry; fall back to our own
-    // read so the cutoff cannot be silently disabled if that changes.
-    const float voltage = lastKnownVoltage > 0.0f ? lastKnownVoltage : cachedScooterVoltage();
+    // Read through the cache (900ms TTL) rather than lastKnownVoltage, so each
+    // 1s confirmation is a genuinely new sample and the cutoff never depends on
+    // loop()'s telemetry cadence staying at 1s.
+    const float voltage = cachedScooterVoltage();
 
     if (voltage < RIDE_CUTOFF_IMPLAUSIBLE_VOLTAGE) {
         if (DEBUG_DEEP_SLEEP) {
@@ -876,8 +910,15 @@ void sendTelemetry()
         scooterSenseConfirmedOn ? "true" : "false",
         charging ? "true" : "false");
 
+    // setValue() unconditionally: the characteristic is READ as well as NOTIFY,
+    // and the app reads it directly, so the stored value must always be current.
     telemetryCharacteristic->setValue((uint8_t *)payload, strlen(payload));
-    telemetryCharacteristic->notify();
+
+    // notify() drives the radio. With no client subscribed it has no recipient,
+    // so skipping it saves a transmit per tick on an idle parked scooter.
+    if (bleClientConnected) {
+        telemetryCharacteristic->notify();
+    }
 }
 
 void holdPowerLatchForDeepSleep()
@@ -958,10 +999,13 @@ void updateLowVoltageDeepSleep()
 
     lastLowVoltageSampleMs = millis();
 
-    // loop() already reads the voltage once per second for telemetry. Fall back to
-    // our own read if that value is missing, so removing the temporary calibration
-    // print cannot silently disable battery protection.
-    const float voltage = lastKnownVoltage > 0.0f ? lastKnownVoltage : cachedScooterVoltage();
+    // Read through the cache rather than reusing lastKnownVoltage. Idle
+    // telemetry only refreshes that every TELEMETRY_INTERVAL_IDLE_MS, which is
+    // slower than this 2s countdown, so trusting it would let the same reading
+    // be counted as two independent confirmations and sleep on less evidence
+    // than DEEP_SLEEP_LOW_VOLTAGE_CONFIRM_COUNT implies. cachedScooterVoltage()
+    // has a 900ms TTL, so each 2s sample here is always a genuine new reading.
+    const float voltage = cachedScooterVoltage();
 
     if (voltage > DEEP_SLEEP_VOLTAGE_THRESHOLD) {
         if (lowVoltageSampleCount > 0 && DEBUG_DEEP_SLEEP) {
@@ -1082,6 +1126,14 @@ void setupBle()
 
     bleAdvertising = NimBLEDevice::getAdvertising();
     bleAdvertising->enableScanResponse(true);
+
+    // Widen the gap between advertising bursts. The radio only transmits for
+    // ~1-2ms per burst, so this is where idle BLE current actually goes; left
+    // unset it used NimBLE's ~1.28s default. Scanning still finds the scooter
+    // inside one scan window, just up to ~2s later in the worst case.
+    bleAdvertising->setMinInterval(BLE_ADV_INTERVAL_MIN);
+    bleAdvertising->setMaxInterval(BLE_ADV_INTERVAL_MAX);
+
     updateNearbyAdvertisement();
     bleAdvertising->start();
 
@@ -1189,22 +1241,48 @@ void loop()
     updateFreeTrialAutoStop();
     printScooterSenseMonitor();
 
-    if (millis() - lastTelemetryMs >= 1000) {
+    // A ride in progress or a connected app both need per-second data: the
+    // 31V cutoff judges a fresh reading, and the app's live telemetry drives
+    // the Complete flow. Only a genuinely idle scooter slows down.
+    const bool scooterBusy = rideActive || scooterOutputWasOn || freeTrialActive || bleClientConnected;
+    const uint32_t telemetryInterval = scooterBusy
+            ? TELEMETRY_INTERVAL_ACTIVE_MS
+            : TELEMETRY_INTERVAL_IDLE_MS;
+
+    if (millis() - lastTelemetryMs >= telemetryInterval) {
         lastTelemetryMs = millis();
+
+        // Kept for the post-wake decision, which records the voltage it acted
+        // on, and for the log below. The sleep guard and ride cutoff now read
+        // the cache directly so neither depends on this cadence.
         lastKnownVoltage = cachedScooterVoltage();
-        Serial.printf("Computed battery voltage: %.3fV\n", lastKnownVoltage); // TEMP: remove after calibration
+
+        if (DEBUG_VERBOSE_LOGS) {
+            Serial.printf("Computed battery voltage: %.3fV\n", lastKnownVoltage);
+        }
+
+        // Always refresh the characteristic, even with nobody connected: the
+        // app reads this value as well as subscribing to it (readTelemetry in
+        // the bridge), so skipping the update would hand a freshly connected
+        // client a stale payload and break the Complete flow. Only the radio
+        // notify is skipped when there is no subscriber - see sendTelemetry().
         sendTelemetry();
     }
 
     // After the telemetry read above, so the cutoff always judges a fresh
-    // voltage rather than one up to a second old.
+    // voltage rather than one up to a second old. It keeps its own 1s sampling
+    // cadence, so a slower idle telemetry tick can never delay a cutoff.
     updateRideLowVoltageCutoff();
 
     // Mirror the running ride's totals to NVS so a battery disconnect cannot
     // erase them.
     updateRideStatePersistence();
 
-    if (!bleClientConnected && millis() - lastAdvertisementMs >= 10000) {
+    const uint32_t advertisementInterval = scooterBusy
+            ? ADVERTISEMENT_INTERVAL_ACTIVE_MS
+            : ADVERTISEMENT_INTERVAL_IDLE_MS;
+
+    if (!bleClientConnected && millis() - lastAdvertisementMs >= advertisementInterval) {
         lastAdvertisementMs = millis();
         updateNearbyAdvertisement();
     }
